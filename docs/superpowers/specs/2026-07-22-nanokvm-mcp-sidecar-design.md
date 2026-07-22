@@ -265,14 +265,88 @@ specific outcome to avoid.
 - Audit redaction tests, including that full text does not leak at default settings.
 - One opt-in smoke test against real hardware behind a `//go:build device` tag.
 
+## Development environment
+
+`mise` pins the toolchain, so the riscv64 cross-build is reproducible across machines and
+CI:
+
+```toml
+# mise.toml
+[tools]
+go = "1.25.4"
+
+[env]
+CGO_ENABLED = "0"
+
+[tasks.build]
+run = "GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags='-s -w' -o dist/nanokvm-mcp ./cmd/nanokvm-mcp"
+
+[tasks.test]
+run = "go test ./..."
+
+[tasks.apicheck]
+run = "go test ./tools/apicheck/..."
+
+[tasks.sizecheck]
+run = "test $(stat -f%z dist/nanokvm-mcp) -lt 15728640"
+
+[tasks.deploy]
+run = "scp dist/nanokvm-mcp root://…/ && ssh … /etc/init.d/S96nanokvm-mcp restart"
+```
+
 ## Build and deployment
 
 ```
-CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -ldflags="-s -w"
+CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags="-s -w"
 ```
 
-No custom toolchain, no `patchelf`, no `dl_lib` dependency. Budget: **binary under 15 MB,
-resident under 25 MB**, against roughly 98 MB free.
+No custom toolchain, no `patchelf`, no `dl_lib` dependency.
+
+**Measured** for a minimal server using the SDK's streamable HTTP handler, cross-compiled
+to `linux/riscv64`: 10.2 MB plain, **7.1 MB** with `-s -w` (`-trimpath` adds no size change,
+only reproducibility). 216 packages link; `golang.org/x/tools` — the heaviest entry in the
+SDK's `go.mod` — is fully dead-code-eliminated. Idle RSS measured at 8.1 MB via a native
+build as a proxy.
+
+Budget: **binary under 15 MB, resident under 25 MB**, against roughly 98 MB free. Both are
+comfortable; the Go runtime is not the constraint.
+
+### Memory strategy
+
+The constraint is the screenshot path, not the runtime. A 1920×1080 JPEG decoded to RGBA is
+~8 MB; at 4K, ~33 MB — one frame exceeds the budget. Go's stdlib `image/jpeg` has **no
+scaled decode**: unlike libjpeg's `scale_denom`, it cannot decode at 1/2 or 1/4 scale, so
+full decode is always paid before downscaling.
+
+Consequences, which are binding design rules and not optimizations:
+
+- **`picoclawBackend` never decodes.** Upstream already resized and JPEG-encoded on-device;
+  its bytes pass straight through to the MCP response. No image memory enters our heap.
+  This is a further reason to prefer it.
+- **`publicBackend` must decode, and is expensive in both RAM and CPU** on a 1 GHz core. It
+  caps the resolution it will serve and calls `debug.FreeOSMemory()` after. It is a
+  correctness fallback, not a performance-equivalent one.
+- **Bounded reads on the MJPEG stream** via `io.LimitReader`. The Python fork accumulates
+  `buffer += chunk` with no cap (`client.py:461`); that is the anti-pattern.
+
+`GOMEMLIMIT` is set in the init script rather than via `debug.SetMemoryLimit` in code, so
+it stays tunable without a rebuild. It is the primary lever: default `GOGC=100` permits the
+heap to double before collecting, which is wrong at this scale, and the limit also makes the
+scavenger return pages to the OS more aggressively. `GOGC` is left alone — setting both is
+counterproductive.
+
+Deliberately rejected:
+
+| Option | Why not |
+|---|---|
+| UPX | Shrinks the binary ~60% on disk but decompresses into RAM at startup, raising peak RSS. Trades 32 GB of plentiful microSD for 98 MB of scarce memory. |
+| `GODEBUG=madvdontneed=1` | Obsolete; the default since Go 1.16. |
+| `GORISCV64` tuning | Verified default is already `rva20u64`, matching the C906. Its additional extensions are T-Head-custom rather than ratified, so Go will not emit them. |
+| `sync.Pool` buffer pooling | Premature at 8 MB idle. |
+
+Budgets are enforced, not aspirational: CI fails a riscv64 build over 15 MB, and the device
+smoke test fails on resident memory over 25 MB. `net/http/pprof` is available behind a build
+tag for hardware bring-up.
 
 Installed **outside `AppDir`** with an `/etc/init.d/S96nanokvm-mcp` init script. Upstream's
 update path is `MoveFilesRecursively(AppDir, BackupDir)` followed by
@@ -299,6 +373,7 @@ documented, not solved, and the install script is re-runnable.
 |---|---|
 | Install path not persistent across app updates | Verified as implementation step 1, before any feature work |
 | Upstream changes the internal picoclaw API | Behind an interface; `publicBackend` is a complete implementation, not a stub; apicheck flags it |
-| Memory pressure on a 98 MB budget | Explicit 25 MB resident budget; on-device resize keeps large frames out of our heap |
+| Memory pressure on a 98 MB budget | Measured 8.1 MB idle, 7.1 MB binary. `GOMEMLIMIT` in the init script; picoclaw path never decodes JPEG; budgets enforced in CI and the device smoke test |
+| `publicBackend` screenshot spikes memory (no scaled decode in Go's `image/jpeg`) | Resolution cap plus `debug.FreeOSMemory()`; documented as a degraded path, and the reason picoclaw is preferred |
 | Session-lock contention with PicoClaw | Detected and surfaced as a clear tool error rather than a hang |
 | Network-exposed keystroke injection | Loopback default bind, bearer auth, read-only mode, audit log, Tailscale guidance |
