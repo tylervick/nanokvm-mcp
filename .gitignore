@@ -1,0 +1,3 @@
+dist/
+*.riscv64
+scripts/hello-riscv64
