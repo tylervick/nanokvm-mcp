@@ -1,0 +1,14 @@
+/api/auth/login
+/api/vm/gpio
+/api/vm/hdmi
+/api/vm/hdmi/reset
+/api/vm/info
+/api/vm/hardware
+/api/storage/image
+/api/storage/image/mounted
+/api/storage/image/mount
+/api/hid/paste
+/api/hid/reset
+/api/stream/mjpeg
+/api/picoclaw/screenshot
+/api/picoclaw/actions

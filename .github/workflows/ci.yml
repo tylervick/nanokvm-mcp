@@ -8,5 +8,4 @@ jobs:
       - uses: jdx/mise-action@v2
       - run: mise run test
       - run: mise run sizecheck
-      # TODO(task-14): enable once tools/apicheck exists
-      # - run: mise run apicheck
+      - run: mise run apicheck
