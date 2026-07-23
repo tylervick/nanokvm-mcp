@@ -3,15 +3,19 @@ package backend
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"io"
 	"net/http"
+	"time"
 
 	"golang.org/x/image/draw"
 
+	"github.com/coder/websocket"
+	"github.com/scgreenhalgh/nanokvm-mcp/internal/hid"
 	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
 )
 
@@ -111,6 +115,146 @@ func resizeJPEG(in []byte, opts ScreenshotOpts) (Shot, error) {
 	return Shot{JPEG: out.Bytes(), Width: nw, Height: nh}, nil
 }
 
-func (p *Public) Input(context.Context, []Action) error {
-	return errors.New("public backend input not implemented")
+func normToKVM(v float64) int {
+	k := int(v*0x7FFE) + 1
+	if k < 1 {
+		k = 1
+	}
+	if k > 0x7FFF {
+		k = 0x7FFF
+	}
+	return k
+}
+
+var mouseButton = map[string]int{"left": 0, "middle": 1, "right": 2, "": 0}
+
+func (p *Public) Input(ctx context.Context, actions []Action) error {
+	if err := ValidateActions(actions); err != nil {
+		return err
+	}
+	// text-only fast path uses the REST paste API; no websocket needed.
+	onlyText := true
+	for _, a := range actions {
+		if a.Action != "type" && a.Action != "wait" {
+			onlyText = false
+			break
+		}
+	}
+	if onlyText {
+		for _, a := range actions {
+			if a.Action == "wait" {
+				time.Sleep(time.Duration(a.DurationMs) * time.Millisecond)
+				continue
+			}
+			if _, err := p.kvm.Do(ctx, http.MethodPost, "/api/hid/paste",
+				map[string]any{"content": a.Text, "langue": ""}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	tok, err := p.kvm.Token(ctx)
+	if err != nil {
+		return err
+	}
+	c, _, err := websocket.Dial(ctx, p.kvm.WSURL(), &websocket.DialOptions{
+		HTTPHeader: http.Header{"Cookie": {"nano-kvm-token=" + tok}},
+	})
+	if err != nil {
+		return err
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+
+	send := func(msg []int) error {
+		b, _ := json.Marshal(msg)
+		return c.Write(ctx, websocket.MessageText, b)
+	}
+
+	for _, a := range actions {
+		switch a.Action {
+		case "wait":
+			time.Sleep(time.Duration(a.DurationMs) * time.Millisecond)
+		case "move":
+			if err := send([]int{2, 3, 0, normToKVM(*a.X), normToKVM(*a.Y)}); err != nil {
+				return err
+			}
+		case "click":
+			btn := mouseButton[a.Button]
+			if a.X != nil && a.Y != nil {
+				if err := send([]int{2, 3, 0, normToKVM(*a.X), normToKVM(*a.Y)}); err != nil {
+					return err
+				}
+			}
+			if err := send([]int{2, 1, btn, 0, 0}); err != nil { // down
+				return err
+			}
+			if err := send([]int{2, 2, 0, 0, 0}); err != nil { // up
+				return err
+			}
+		case "scroll":
+			if err := send([]int{2, 4, 0, 0, a.Amount}); err != nil {
+				return err
+			}
+		case "type":
+			for _, r := range a.Text {
+				code, shift, ok := hid.CharCode(r)
+				if !ok {
+					continue
+				}
+				sh := 0
+				if shift {
+					sh = 2
+				}
+				if err := send([]int{1, int(code), 0, sh, 0, 0}); err != nil {
+					return err
+				}
+				if err := send([]int{1, 0, 0, 0, 0, 0}); err != nil {
+					return err
+				}
+			}
+		case "hotkey":
+			var mod int
+			var last byte
+			for _, k := range a.Keys {
+				switch k {
+				case "ctrl":
+					mod |= 1
+				case "shift":
+					mod |= 2
+				case "alt":
+					mod |= 4
+				case "meta", "cmd", "win", "super":
+					mod |= 8
+				default:
+					if code, ok := hid.Code(k); ok {
+						last = code
+					}
+				}
+			}
+			if err := send([]int{1, int(last), mod & 1, (mod >> 1) & 1, (mod >> 2) & 1, (mod >> 3) & 1}); err != nil {
+				return err
+			}
+			if err := send([]int{1, 0, 0, 0, 0, 0}); err != nil {
+				return err
+			}
+		case "drag":
+			if a.From == nil || a.To == nil {
+				return fmt.Errorf("drag requires from and to")
+			}
+			if err := send([]int{2, 3, 0, normToKVM(*a.From.X), normToKVM(*a.From.Y)}); err != nil {
+				return err
+			}
+			if err := send([]int{2, 1, 0, 0, 0}); err != nil {
+				return err
+			}
+			if err := send([]int{2, 3, 0, normToKVM(*a.To.X), normToKVM(*a.To.Y)}); err != nil {
+				return err
+			}
+			if err := send([]int{2, 2, 0, 0, 0}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

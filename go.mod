@@ -3,6 +3,7 @@ module github.com/scgreenhalgh/nanokvm-mcp
 go 1.25.4
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	golang.org/x/image v0.44.0
 )
