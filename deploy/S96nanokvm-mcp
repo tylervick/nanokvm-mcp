@@ -1,0 +1,31 @@
+#!/bin/sh
+# NanoKVM MCP sidecar init script. Install as /etc/init.d/S96nanokvm-mcp.
+DAEMON=/root/nanokvm-mcp/nanokvm-mcp
+CONF=/root/nanokvm-mcp/nanokvm-mcp.env
+PIDFILE=/var/run/nanokvm-mcp.pid
+LOG=/data/nanokvm-mcp/daemon.log
+
+start() {
+	printf 'Starting nanokvm-mcp: '
+	# shellcheck disable=SC1090
+	[ -f "$CONF" ] && . "$CONF"
+	export NANOKVM_HOST NANOKVM_USER NANOKVM_PASS NANOKVM_MCP_BIND \
+		NANOKVM_MCP_TOKEN NANOKVM_MCP_READONLY NANOKVM_MCP_AUDIT \
+		NANOKVM_MCP_AUDIT_FULL GOMEMLIMIT
+	: "${GOMEMLIMIT:=24MiB}"
+	export GOMEMLIMIT
+	mkdir -p /data/nanokvm-mcp
+	start-stop-daemon -S -q -b -m -p "$PIDFILE" -x "$DAEMON" >>"$LOG" 2>&1
+	echo OK
+}
+stop() {
+	printf 'Stopping nanokvm-mcp: '
+	start-stop-daemon -K -q -p "$PIDFILE"
+	echo OK
+}
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	restart) stop; sleep 1; start ;;
+	*) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac
