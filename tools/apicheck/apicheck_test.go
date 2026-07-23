@@ -45,9 +45,12 @@ func TestRequiredRoutesExistUpstream(t *testing.T) {
 	if os.Getenv("APICHECK_OFFLINE") == "1" {
 		t.Skip("APICHECK_OFFLINE set")
 	}
+	corpusByFile := map[string]string{}
 	corpus := ""
 	for _, f := range routerFiles {
-		corpus += fetch(t, f)
+		content := fetch(t, f)
+		corpusByFile[f] = content
+		corpus += content
 	}
 	f, err := os.Open("routes.txt")
 	if err != nil {
@@ -74,11 +77,15 @@ func TestRequiredRoutesExistUpstream(t *testing.T) {
 		// picoclaw group's own base path ("/api/picoclaw"), e.g.
 		// `picoclawScreenshotPath = "/screenshot"` used as
 		// `localAPI.GET(picoclawScreenshotPath, ...)`. So for those we
-		// match on the suffix after "/api/picoclaw" instead.
+		// match on the suffix after "/api/picoclaw" instead. The suffix
+		// alone (e.g. "/screenshot") is short and generic, so we scope
+		// the search to picoclaw.go's own content only -- searching the
+		// combined corpus could let a coincidental match in an unrelated
+		// router file mask an actual removal of the route.
 		var found bool
 		if isPicoclaw {
 			needle := strings.TrimPrefix(route, "/api/picoclaw")
-			found = strings.Contains(corpus, "\""+needle+"\"")
+			found = strings.Contains(corpusByFile["server/router/picoclaw.go"], "\""+needle+"\"")
 		} else {
 			fullNeedle := "\"" + route + "\""
 			suffixNeedle := "\"" + strings.TrimPrefix(route, "/api") + "\""
