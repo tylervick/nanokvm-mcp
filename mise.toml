@@ -1,6 +1,12 @@
 [tools]
 go = "1.25.4"
 
+[settings]
+# Prepend mise-managed tool dirs ahead of everything else on PATH. Without
+# this, a Homebrew go on PATH shadows the pinned toolchain and its compiler
+# mismatches the exported GOROOT ("go tool version" errors) under `mise run`.
+activate_aggressive = true
+
 [env]
 CGO_ENABLED = "0"
 
