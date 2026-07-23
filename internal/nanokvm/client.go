@@ -22,10 +22,11 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	cfg   ClientConfig
-	http  *http.Client
-	mu    sync.Mutex
-	token string
+	cfg       ClientConfig
+	http      *http.Client
+	mu        sync.Mutex
+	token     string
+	hwVersion string // cached hardware version, guarded by mu
 }
 
 func New(cfg ClientConfig) *Client {

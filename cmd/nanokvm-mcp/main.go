@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"net/http"
 	"os"
@@ -38,11 +39,20 @@ func run() error {
 		scheme, wsScheme = "https", "wss"
 	}
 	baseURL := scheme + "://" + cfg.Host
+
+	transport := &http.Transport{}
+	if cfg.UseHTTPS {
+		//nolint:gosec // opt-in: NANOKVM_VERIFY_SSL=false is for self-signed device certs, default is verification ON.
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: !cfg.VerifySSL}
+	}
+	httpClient := &http.Client{Transport: transport}
+
 	kvm := nanokvm.New(nanokvm.ClientConfig{
-		BaseURL:  baseURL,
-		WSURL:    wsScheme + "://" + cfg.Host + "/api/ws",
-		Username: cfg.Username,
-		Password: cfg.Password,
+		BaseURL:    baseURL,
+		WSURL:      wsScheme + "://" + cfg.Host + "/api/ws",
+		Username:   cfg.Username,
+		Password:   cfg.Password,
+		HTTPClient: httpClient,
 	})
 
 	// Audit log.
@@ -63,6 +73,7 @@ func run() error {
 		BaseURL:   baseURL,
 		TokenPath: backend.DefaultTokenPath,
 		SessionID: "nanokvm-mcp",
+		HTTP:      httpClient,
 		Fallback:  pub,
 		Probe:     true,
 	})

@@ -17,7 +17,7 @@ run = "GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags='-s -w' -o dist/nan
 run = "go build -trimpath -ldflags='-s -w' -o dist/nanokvm-mcp-host ./cmd/nanokvm-mcp"
 
 [tasks.test]
-run = "go test ./..."
+run = "go test -race ./..."
 
 [tasks.apicheck]
 run = "go test ./tools/apicheck/..."

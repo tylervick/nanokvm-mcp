@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -19,9 +18,6 @@ type Hardware struct {
 	Version string
 	Raw     map[string]any
 }
-
-var hwOnce sync.Once
-var hwVersion string
 
 func (c *Client) Power(ctx context.Context, action string, durationMs int) error {
 	_, err := c.Do(ctx, http.MethodPost, "/api/vm/gpio",
@@ -48,8 +44,11 @@ func (c *Client) Hardware(ctx context.Context) (Hardware, error) {
 	var m map[string]any
 	_ = json.Unmarshal(raw, &m)
 	v, _ := m["version"].(string)
-	hwOnce.Do(func() { hwVersion = strings.ToLower(v) })
-	return Hardware{Version: strings.ToLower(v), Raw: m}, nil
+	v = strings.ToLower(v)
+	c.mu.Lock()
+	c.hwVersion = v
+	c.mu.Unlock()
+	return Hardware{Version: v, Raw: m}, nil
 }
 
 func (c *Client) LEDStatus(ctx context.Context) (LED, error) {
@@ -61,12 +60,15 @@ func (c *Client) LEDStatus(ctx context.Context) (LED, error) {
 	_ = json.Unmarshal(raw, &led)
 	// HDD LED exists only on alpha hardware (upstream gpio.go hardcodes hdd=false
 	// otherwise). Report availability so the tool does not present a fake reading.
-	if hwVersion == "" {
-		if hw, err := c.Hardware(ctx); err == nil {
-			hwVersion = hw.Version
+	c.mu.Lock()
+	hw := c.hwVersion
+	c.mu.Unlock()
+	if hw == "" {
+		if h, err := c.Hardware(ctx); err == nil {
+			hw = h.Version
 		}
 	}
-	led.HDDAvailable = hwVersion == "alpha"
+	led.HDDAvailable = hw == "alpha"
 	return led, nil
 }
 

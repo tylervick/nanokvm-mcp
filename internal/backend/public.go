@@ -159,6 +159,7 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 		return err
 	}
 	c, _, err := websocket.Dial(ctx, p.kvm.WSURL(), &websocket.DialOptions{
+		HTTPClient: p.kvm.HTTP(),
 		HTTPHeader: http.Header{"Cookie": {"nano-kvm-token=" + tok}},
 	})
 	if err != nil {
