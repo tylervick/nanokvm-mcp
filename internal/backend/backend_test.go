@@ -23,4 +23,16 @@ func TestValidateActions(t *testing.T) {
 	if err := ValidateActions([]Action{{Action: "drag", From: &Point{X: f64(1.5), Y: f64(0.5)}, To: &Point{X: f64(0.5), Y: f64(0.5)}}}); err == nil {
 		t.Error("out-of-range nested From coordinate should be rejected")
 	}
+	if err := ValidateActions([]Action{{Action: "move"}}); err == nil {
+		t.Error("move without x/y should be rejected")
+	}
+	if err := ValidateActions([]Action{{Action: "move", X: f64(0.5)}}); err == nil {
+		t.Error("move with only x should be rejected")
+	}
+	if err := ValidateActions([]Action{{Action: "drag", From: &Point{}, To: &Point{}}}); err == nil {
+		t.Error("drag with empty points should be rejected")
+	}
+	if err := ValidateActions([]Action{{Action: "move", X: f64(0.5), Y: f64(0.5)}}); err != nil {
+		t.Errorf("valid move should be accepted: %v", err)
+	}
 }

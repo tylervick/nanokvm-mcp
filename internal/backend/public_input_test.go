@@ -61,3 +61,14 @@ func TestPublicInputClickSendsWSMessages(t *testing.T) {
 		t.Errorf("expected mouse event type 2, got %v", recv[0])
 	}
 }
+
+func TestPublicInputRejectsMalformedCoords(t *testing.T) {
+	var recv [][]int
+	p := NewPublic(fakeWSKVM(t, &recv))
+	if err := p.Input(context.Background(), []Action{{Action: "move"}}); err == nil {
+		t.Error("move without coords should return an error, not panic")
+	}
+	if err := p.Input(context.Background(), []Action{{Action: "drag", From: &Point{}, To: &Point{}}}); err == nil {
+		t.Error("drag with empty points should return an error, not panic")
+	}
+}

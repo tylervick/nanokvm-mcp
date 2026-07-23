@@ -176,6 +176,9 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 		case "wait":
 			time.Sleep(time.Duration(a.DurationMs) * time.Millisecond)
 		case "move":
+			if a.X == nil || a.Y == nil {
+				return fmt.Errorf("move requires x and y")
+			}
 			if err := send([]int{2, 3, 0, normToKVM(*a.X), normToKVM(*a.Y)}); err != nil {
 				return err
 			}
@@ -239,7 +242,9 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 				return err
 			}
 		case "drag":
-			if a.From == nil || a.To == nil {
+			if a.From == nil || a.To == nil ||
+				a.From.X == nil || a.From.Y == nil ||
+				a.To.X == nil || a.To.Y == nil {
 				return fmt.Errorf("drag requires from and to")
 			}
 			if err := send([]int{2, 3, 0, normToKVM(*a.From.X), normToKVM(*a.From.Y)}); err != nil {

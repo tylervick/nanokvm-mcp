@@ -69,6 +69,18 @@ func ValidateActions(actions []Action) error {
 		if a.To != nil && (!inRange(a.To.X) || !inRange(a.To.Y)) {
 			return fmt.Errorf("action %d: to coordinates must be normalized to [0,1]", i)
 		}
+		switch a.Action {
+		case "move":
+			if a.X == nil || a.Y == nil {
+				return fmt.Errorf("action %d: move requires x and y", i)
+			}
+		case "drag":
+			if a.From == nil || a.To == nil ||
+				a.From.X == nil || a.From.Y == nil ||
+				a.To.X == nil || a.To.Y == nil {
+				return fmt.Errorf("action %d: drag requires from and to, each with x and y", i)
+			}
+		}
 	}
 	return nil
 }
