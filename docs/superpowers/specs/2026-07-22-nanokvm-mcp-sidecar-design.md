@@ -13,6 +13,39 @@ This replaces the approach of forking
 [`scgreenhalgh/nanokvm-mcp`](https://github.com/scgreenhalgh/nanokvm-mcp) (Python,
 off-device), which was evaluated and rejected — see Background.
 
+## Device recon (verified 2026-07-23)
+
+Run against a real NanoKVM (firmware 2.4.3, `beta` hardware) via
+`scripts/device-check.sh`. Results that shape the design:
+
+- **Arch:** `riscv64` GNU/Linux, musl (`ld-musl-riscv64`). Static `CGO_ENABLED=0`
+  riscv64 binary built here runs on-device. Build assumption confirmed.
+- **Memory:** **128 MB total, 43 MB available** — not the ~98 MB inferred from the
+  SG2002 datasheet. The 25 MB resident budget fits, but headroom is ~18 MB. This makes
+  the JPEG-decode discipline a hard safety requirement, not a precaution (see Memory
+  strategy).
+- **Filesystems:** `/` is ext4 (7.6 GB, `mmcblk0p2`); `/data` is a dedicated **21.5 GB
+  exfat** partition (`mmcblk0p3`); `/usr/local/bin` does not exist. `/kvmapp`, `/root`,
+  `/etc/init.d`, and `/data` are all writable.
+- **Install path (decided):** binary + config in **`/root/nanokvm-mcp/`** (ext4, real
+  Unix permission/exec bits; updates wipe only `/root/old` and `/root/.kvmcache`, never
+  `/root` itself); **audit log in `/data/nanokvm-mcp/`** (space, spares rootfs write
+  wear, and survives a rootfs reflash as a separate partition). Init script
+  `/etc/init.d/S96nanokvm-mcp` (the `S95nanokvm` slot precedes it; `S96` is free).
+- **PicoClaw internal path works:** `/etc/kvm/.picoclaw_internal_token` exists (88 chars);
+  `GET /api/picoclaw/screenshot` and `POST /api/picoclaw/actions` both return 200 with the
+  token + an arbitrary `X-PicoClaw-Session-ID`. `picoclawBackend` is viable with no
+  runtime install.
+- **`/api/vm/gpio/led` returns 404 on live firmware** — the Python fork's LED bug,
+  confirmed against hardware.
+- **`beta` hardware has no HDD LED.** `gpio.go` hardcodes `hdd=false` unless the board is
+  `HWVersionAlpha`. `nanokvm_led_status` must present `hdd` as possibly-unavailable rather
+  than a real reading.
+
+Resolved constants (from source, no device needed): `sessionIDHeader =
+"X-PicoClaw-Session-ID"`; `AppDir = /kvmapp`, `BackupDir = /root/old`, `CacheDir =
+/root/.kvmcache`.
+
 ## Background
 
 ### Why not the existing Python fork
@@ -69,7 +102,8 @@ notification handling. **We do not reuse this layer.** We reuse the services ben
 
 Forced by the hardware. The common SG2002 NanoKVM is a single 1.0 GHz C906 RISC-V core
 with 256 MB DDR3, of which upstream's README states 158 MB is allocated to the multimedia
-subsystem — leaving roughly 98 MB for everything else. Python is not viable: the `mcp`
+subsystem — leaving roughly 98 MB on paper (43 MB actually free on the test board once the
+firmware is running). Python is not viable: the `mcp`
 SDK pulls `pydantic-core` (Rust) and image handling pulls Pillow, both requiring
 riscv64-musl cross-builds, for a runtime that would contend with live video encoding.
 
@@ -184,7 +218,7 @@ annotations give the client meaningful approval granularity.
 | Tool | Source |
 |---|---|
 | `nanokvm_screenshot` | backend |
-| `nanokvm_led_status` | `GET /api/vm/gpio` → `{pwr, hdd}` |
+| `nanokvm_led_status` | `GET /api/vm/gpio` → `{pwr, hdd}`; `hdd` is always `false` on non-`alpha` hardware and is reported as unavailable there |
 | `nanokvm_hdmi_status` | `GET /api/vm/hdmi` |
 | `nanokvm_list_images` | `GET /api/storage/image` |
 | `nanokvm_mounted_image` | `GET /api/storage/image/mounted` |
@@ -308,15 +342,18 @@ only reproducibility). 216 packages link; `golang.org/x/tools` — the heaviest 
 SDK's `go.mod` — is fully dead-code-eliminated. Idle RSS measured at 8.1 MB via a native
 build as a proxy.
 
-Budget: **binary under 15 MB, resident under 25 MB**, against roughly 98 MB free. Both are
-comfortable; the Go runtime is not the constraint.
+Budget: **binary under 15 MB, resident under 25 MB**, against **43 MB available** measured
+on-device (a 128 MB board, less than the ~98 MB the datasheet implied). The binary fits
+easily; the ~18 MB resident headroom is real but thin, which is why the screenshot path
+below is a hard constraint rather than a nicety.
 
 ### Memory strategy
 
-The constraint is the screenshot path, not the runtime. A 1920×1080 JPEG decoded to RGBA is
-~8 MB; at 4K, ~33 MB — one frame exceeds the budget. Go's stdlib `image/jpeg` has **no
-scaled decode**: unlike libjpeg's `scale_denom`, it cannot decode at 1/2 or 1/4 scale, so
-full decode is always paid before downscaling.
+The constraint is the screenshot path, not the runtime. With only ~18 MB of headroom over
+the resident budget, a single 4K frame decoded to RGBA (~33 MB) would OOM the device. A
+1920×1080 frame (~8 MB) is survivable; 4K is not. Go's stdlib `image/jpeg` has **no scaled
+decode**: unlike libjpeg's `scale_denom`, it cannot decode at 1/2 or 1/4 scale, so full
+decode is always paid before downscaling.
 
 Consequences, which are binding design rules and not optimizations:
 
@@ -339,7 +376,7 @@ Deliberately rejected:
 
 | Option | Why not |
 |---|---|
-| UPX | Shrinks the binary ~60% on disk but decompresses into RAM at startup, raising peak RSS. Trades 32 GB of plentiful microSD for 98 MB of scarce memory. |
+| UPX | Shrinks the binary ~60% on disk but decompresses into RAM at startup, raising peak RSS. Trades plentiful storage for the scarce ~43 MB of free RAM. |
 | `GODEBUG=madvdontneed=1` | Obsolete; the default since Go 1.16. |
 | `GORISCV64` tuning | Verified default is already `rva20u64`, matching the C906. Its additional extensions are T-Head-custom rather than ratified, so Go will not emit them. |
 | `sync.Pool` buffer pooling | Premature at 8 MB idle. |
@@ -348,15 +385,17 @@ Budgets are enforced, not aspirational: CI fails a riscv64 build over 15 MB, and
 smoke test fails on resident memory over 25 MB. `net/http/pprof` is available behind a build
 tag for hardware bring-up.
 
-Installed **outside `AppDir`** with an `/etc/init.d/S96nanokvm-mcp` init script. Upstream's
-update path is `MoveFilesRecursively(AppDir, BackupDir)` followed by
-`MoveFilesRecursively(src, AppDir)` — it replaces the app directory wholesale but touches
-nothing else, so a sidecar outside it should survive app updates.
+Install layout (confirmed against hardware — see Device recon):
 
-**This is inferred from upstream's update code, not verified on hardware.** Confirming it
-— and identifying a writable, genuinely persistent install path — is the first
-implementation step. A full SD-card reflash wipes the sidecar regardless; that is
-documented, not solved, and the install script is re-runnable.
+- **`/root/nanokvm-mcp/`** — binary + config, on ext4 with real exec/permission bits.
+  Updates move `/kvmapp` aside and `RemoveAll` only `/root/old` and `/root/.kvmcache`, so
+  `/root/nanokvm-mcp/` is untouched by app updates.
+- **`/data/nanokvm-mcp/`** — audit log, on the 21.5 GB exfat data partition. Keeps write
+  wear off the small rootfs and survives a rootfs reflash (separate partition).
+- **`/etc/init.d/S96nanokvm-mcp`** — init script; orders after `S95nanokvm`.
+
+A full SD-card reflash still wipes `/root` and `/etc`; the install script is re-runnable and
+that case is documented, not solved.
 
 ## Out of scope
 
@@ -371,9 +410,9 @@ documented, not solved, and the install script is re-runnable.
 
 | Risk | Mitigation |
 |---|---|
-| Install path not persistent across app updates | Verified as implementation step 1, before any feature work |
+| Install path not persistent across app updates | Resolved: `/root/nanokvm-mcp/` survives app updates (recon confirmed) |
 | Upstream changes the internal picoclaw API | Behind an interface; `publicBackend` is a complete implementation, not a stub; apicheck flags it |
-| Memory pressure on a 98 MB budget | Measured 8.1 MB idle, 7.1 MB binary. `GOMEMLIMIT` in the init script; picoclaw path never decodes JPEG; budgets enforced in CI and the device smoke test |
+| Memory pressure on a thin ~18 MB headroom (43 MB available) | Measured 8.1 MB idle, 7.1 MB binary. `GOMEMLIMIT` in the init script; picoclaw path never decodes JPEG; `publicBackend` hard-caps resolution to keep decode under budget; enforced in CI and the device smoke test |
 | `publicBackend` screenshot spikes memory (no scaled decode in Go's `image/jpeg`) | Resolution cap plus `debug.FreeOSMemory()`; documented as a degraded path, and the reason picoclaw is preferred |
 | Session-lock contention with PicoClaw | Detected and surfaced as a clear tool error rather than a hang |
 | Network-exposed keystroke injection | Loopback default bind, bearer auth, read-only mode, audit log, Tailscale guidance |

@@ -124,25 +124,35 @@ fi
 
 # ---------------------------------------------------------------------------
 say "7. Public API routes  (401 = exists, 404 = gone)"
-if [ "$HTTP" = curl ]; then
-    for p in /api/vm/gpio /api/vm/gpio/led /api/vm/hdmi /api/vm/info \
-             /api/vm/hardware /api/storage/image /api/storage/image/mounted \
-             /api/hid/paste /api/hid/reset /api/stream/mjpeg; do
-        C=$(status_of "http://127.0.0.1$p")
-        case "$C" in
-            401|403) ok  "$p -> $C (route exists)" ;;
-            404)     if [ "$p" = /api/vm/gpio/led ]; then
-                         ok "$p -> 404 (confirms the Python fork's LED bug)"
-                     else
-                         bad "$p -> 404 (route we depend on is GONE)"
-                     fi ;;
-            200)     ok  "$p -> 200 (exists, unauthenticated)" ;;
-            *)       warn "$p -> $C" ;;
-        esac
-    done
-else
-    info "skipped - needs curl"
-fi
+# The router does not set HandleMethodNotAllowed, so gin returns 404 for the
+# wrong HTTP method - indistinguishable from a missing route. Probe each path
+# with the method it is actually registered under.
+probe() {
+    _method=$1; _path=$2; _note=$3
+    if [ "$HTTP" != curl ]; then info "$_path skipped - needs curl"; return; fi
+    if [ "$_method" = POST ]; then
+        C=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1$_path" 2>/dev/null)
+    else
+        C=$(status_of "http://127.0.0.1$_path")
+    fi
+    case "$C" in
+        400|401|403) ok  "$_method $_path -> $C (route exists)" ;;
+        404)         if [ -n "$_note" ]; then ok "$_method $_path -> 404 ($_note)";
+                     else bad "$_method $_path -> 404 (route we depend on is GONE)"; fi ;;
+        200)         ok  "$_method $_path -> 200 (exists)" ;;
+        *)           warn "$_method $_path -> $C" ;;
+    esac
+}
+probe GET  /api/vm/gpio
+probe GET  /api/vm/gpio/led "confirms the Python fork's LED bug - use GET /api/vm/gpio"
+probe GET  /api/vm/hdmi
+probe GET  /api/vm/info
+probe GET  /api/vm/hardware
+probe GET  /api/storage/image
+probe GET  /api/storage/image/mounted
+probe POST /api/hid/paste
+probe POST /api/hid/reset
+probe GET  /api/stream/mjpeg
 
 # ---------------------------------------------------------------------------
 say "8. PicoClaw internal endpoints"
