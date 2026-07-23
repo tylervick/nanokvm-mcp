@@ -16,11 +16,12 @@ Licensed under the **GNU General Public License v3.0** — see [`LICENSE`](LICEN
 
 This project is not affiliated with Sipeed. It talks to the stock NanoKVM firmware over
 its existing HTTP/WebSocket API and, on devices where it's available, an internal
-"PicoClaw" API used by Sipeed's own on-device agent. Some logic (the CryptoJS-compatible
-password encryption scheme, HID action semantics) is ported or reverse-engineered from
-the GPL-3.0 upstream project [`sipeed/NanoKVM`](https://github.com/sipeed/NanoKVM); files
-containing such code carry a header noting the origin. GPL-3.0 was chosen specifically so
-that porting from upstream requires no separate derivative-work analysis.
+"PicoClaw" API used by Sipeed's own on-device agent. `internal/nanokvm/auth.go` is a
+clean-room Go reimplementation of the CryptoJS-compatible password-encryption wire format
+used by the GPL-3.0 upstream project [`sipeed/NanoKVM`](https://github.com/sipeed/NanoKVM)
+and carries a header noting the origin. GPL-3.0 was chosen to match upstream and to keep
+the freedom to port further logic from it in the future without a separate
+derivative-work analysis.
 
 ## Install layout
 
@@ -174,7 +175,7 @@ target.
 ```sh
 mise run test      # unit tests, no mocked HTTP/WS transport (httptest fakes only)
 mise run apicheck  # fails if our assumed upstream routes have drifted
-mise run sizecheck  # fails if the binary exceeds 15 MB
+mise run sizecheck # fails if the binary exceeds 15 MB
 ```
 
 See [`docs/superpowers/specs/2026-07-22-nanokvm-mcp-sidecar-design.md`](docs/superpowers/specs/2026-07-22-nanokvm-mcp-sidecar-design.md)
