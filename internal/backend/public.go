@@ -60,7 +60,9 @@ func (p *Public) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, err
 	}
 	needResize := (opts.Width > 0 && cfg.Width > opts.Width) || (opts.Height > 0 && cfg.Height > opts.Height)
 	if !needResize {
-		return Shot{JPEG: jpegBytes, Width: cfg.Width, Height: cfg.Height}, nil
+		// Clone so the returned JPEG doesn't keep the whole up-to-8MB read
+		// buffer (raw) alive via a sub-slice reference.
+		return Shot{JPEG: bytes.Clone(jpegBytes), Width: cfg.Width, Height: cfg.Height}, nil
 	}
 	if cfg.Width*cfg.Height > maxDecodePixels {
 		return Shot{}, fmt.Errorf("frame %dx%d exceeds decode cap (%d px); use the picoclaw backend for on-device resize",
