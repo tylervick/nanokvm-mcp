@@ -2,7 +2,10 @@ module github.com/scgreenhalgh/nanokvm-mcp
 
 go 1.25.4
 
-require github.com/modelcontextprotocol/go-sdk v1.6.1
+require (
+	github.com/modelcontextprotocol/go-sdk v1.6.1
+	golang.org/x/image v0.44.0
+)
 
 require (
 	github.com/google/jsonschema-go v0.4.3 // indirect

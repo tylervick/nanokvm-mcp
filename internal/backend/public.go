@@ -1,8 +1,16 @@
 package backend
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"image"
+	"image/jpeg"
+	"io"
+	"net/http"
+
+	"golang.org/x/image/draw"
 
 	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
 )
@@ -11,9 +19,96 @@ type Public struct{ kvm *nanokvm.Client }
 
 func NewPublic(kvm *nanokvm.Client) *Public { return &Public{kvm: kvm} }
 func (p *Public) Name() string              { return "public" }
-func (p *Public) Screenshot(context.Context, ScreenshotOpts) (Shot, error) {
-	return Shot{}, errors.New("public backend screenshot not implemented")
+
+const (
+	maxDecodePixels = 2_100_000 // ~1920x1080; refuse to decode anything larger
+	maxFrameBytes   = 8 << 20   // bound the stream read at 8MB
+)
+
+func (p *Public) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, error) {
+	tok, err := p.kvm.Token(ctx)
+	if err != nil {
+		return Shot{}, err
+	}
+	// Reconstruct the base URL via a request through the client's transport.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.kvm.BaseURL()+"/api/stream/mjpeg?n=1", nil)
+	if err != nil {
+		return Shot{}, err
+	}
+	req.AddCookie(&http.Cookie{Name: "nano-kvm-token", Value: tok})
+	resp, err := p.kvm.HTTP().Do(req)
+	if err != nil {
+		return Shot{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return Shot{}, fmt.Errorf("public screenshot: HTTP %d", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxFrameBytes))
+	if err != nil {
+		return Shot{}, err
+	}
+	jpegBytes, err := extractJPEG(raw)
+	if err != nil {
+		return Shot{}, err
+	}
+
+	// Inspect dimensions WITHOUT full decode.
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(jpegBytes))
+	if err != nil {
+		return Shot{}, err
+	}
+	needResize := (opts.Width > 0 && cfg.Width > opts.Width) || (opts.Height > 0 && cfg.Height > opts.Height)
+	if !needResize {
+		return Shot{JPEG: jpegBytes, Width: cfg.Width, Height: cfg.Height}, nil
+	}
+	if cfg.Width*cfg.Height > maxDecodePixels {
+		return Shot{}, fmt.Errorf("frame %dx%d exceeds decode cap (%d px); use the picoclaw backend for on-device resize",
+			cfg.Width, cfg.Height, maxDecodePixels)
+	}
+	return resizeJPEG(jpegBytes, opts)
 }
+
+func extractJPEG(buf []byte) ([]byte, error) {
+	start := bytes.Index(buf, []byte{0xFF, 0xD8})
+	if start < 0 {
+		return nil, errors.New("no JPEG SOI marker in stream")
+	}
+	end := bytes.Index(buf[start:], []byte{0xFF, 0xD9})
+	if end < 0 {
+		return nil, errors.New("no JPEG EOI marker in stream")
+	}
+	return buf[start : start+end+2], nil
+}
+
+func resizeJPEG(in []byte, opts ScreenshotOpts) (Shot, error) {
+	src, err := jpeg.Decode(bytes.NewReader(in))
+	if err != nil {
+		return Shot{}, err
+	}
+	b := src.Bounds()
+	nw, nh := b.Dx(), b.Dy()
+	if opts.Width > 0 && nw > opts.Width {
+		nh = nh * opts.Width / nw
+		nw = opts.Width
+	}
+	if opts.Height > 0 && nh > opts.Height {
+		nw = nw * opts.Height / nh
+		nh = opts.Height
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, nw, nh))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), src, b, draw.Over, nil)
+	q := opts.Quality
+	if q <= 0 {
+		q = 80
+	}
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: q}); err != nil {
+		return Shot{}, err
+	}
+	return Shot{JPEG: out.Bytes(), Width: nw, Height: nh}, nil
+}
+
 func (p *Public) Input(context.Context, []Action) error {
 	return errors.New("public backend input not implemented")
 }

@@ -45,6 +45,12 @@ type envelope struct {
 // WSURL returns the configured websocket URL (used by backends).
 func (c *Client) WSURL() string { return c.cfg.WSURL }
 
+// BaseURL returns the configured base URL (used by the public backend).
+func (c *Client) BaseURL() string { return c.cfg.BaseURL }
+
+// HTTP returns the underlying HTTP client (used by the public backend).
+func (c *Client) HTTP() *http.Client { return c.http }
+
 // Token ensures a session token exists and returns it.
 func (c *Client) Token(ctx context.Context) (string, error) {
 	c.mu.Lock()
