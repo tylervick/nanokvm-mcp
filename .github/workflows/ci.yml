@@ -1,0 +1,12 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: mise run test
+      - run: mise run sizecheck
+      # TODO(task-14): enable once tools/apicheck exists
+      # - run: mise run apicheck

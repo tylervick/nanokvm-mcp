@@ -1,0 +1,21 @@
+[tools]
+go = "1.25.4"
+
+[env]
+CGO_ENABLED = "0"
+
+[tasks.build]
+run = "GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags='-s -w' -o dist/nanokvm-mcp ./cmd/nanokvm-mcp"
+
+[tasks.build-host]
+run = "go build -trimpath -ldflags='-s -w' -o dist/nanokvm-mcp-host ./cmd/nanokvm-mcp"
+
+[tasks.test]
+run = "go test ./..."
+
+[tasks.apicheck]
+run = "go test ./tools/apicheck/..."
+
+[tasks.sizecheck]
+depends = ["build"]
+run = "sz=$(wc -c < dist/nanokvm-mcp); echo \"binary: $sz bytes\"; test \"$sz\" -lt 15728640 || { echo 'FAIL: binary exceeds 15MB'; exit 1; }"
