@@ -59,10 +59,27 @@ func (l *Logger) redact(v any) any {
 	}
 }
 
+// normalize converts args (which may contain typed structs such as
+// []backend.Action) into generic map/slice/scalar shapes via a JSON round-trip,
+// so redact reaches nested "text" fields regardless of the concrete Go type
+// passed in. On marshal/unmarshal failure it returns a non-leaking marker
+// rather than risk emitting unredacted data.
+func normalize(args map[string]any) any {
+	b, err := json.Marshal(args)
+	if err != nil {
+		return map[string]any{"redaction_error": "marshal failed"}
+	}
+	var generic any
+	if err := json.Unmarshal(b, &generic); err != nil {
+		return map[string]any{"redaction_error": "unmarshal failed"}
+	}
+	return generic
+}
+
 func (l *Logger) Record(tool, backend string, args map[string]any, err error) {
 	a := any(args)
 	if !l.full {
-		a = l.redact(args)
+		a = l.redact(normalize(args))
 	}
 	entry := map[string]any{
 		"ts":      l.now().UTC().Format(time.RFC3339),
