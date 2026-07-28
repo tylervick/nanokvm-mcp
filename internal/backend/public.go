@@ -44,7 +44,7 @@ func (p *Public) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, err
 	if err != nil {
 		return Shot{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return Shot{}, fmt.Errorf("public screenshot: HTTP %d", resp.StatusCode)
 	}
@@ -165,7 +165,7 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = c.Close(websocket.StatusNormalClosure, "") }()
 
 	send := func(msg []int) error {
 		b, _ := json.Marshal(msg)

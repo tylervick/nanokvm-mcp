@@ -13,6 +13,7 @@ import (
 	"strings"
 )
 
+//nolint:gosec // G101: header and path names for the firmware's token, not credentials.
 const (
 	InternalTokenHeader = "X-NanoKVM-Internal-Token"
 	SessionIDHeader     = "X-PicoClaw-Session-ID"
@@ -34,7 +35,7 @@ func NewPicoclaw(baseURL, token, sessionID string, hc *http.Client) *Picoclaw {
 }
 
 func ReadInternalToken(path string) (string, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // G304: path is operator-configured; default is the firmware's own token file.
 	if err != nil {
 		return "", err
 	}
@@ -73,7 +74,7 @@ func (p *Picoclaw) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, e
 	if err != nil {
 		return Shot{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return Shot{}, fmt.Errorf("picoclaw screenshot: HTTP %d", resp.StatusCode)
 	}
@@ -102,7 +103,7 @@ func (p *Picoclaw) Input(ctx context.Context, actions []Action) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("picoclaw actions: HTTP %d: %s", resp.StatusCode, raw)

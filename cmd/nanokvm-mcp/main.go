@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -56,7 +57,7 @@ func run() error {
 	})
 
 	// Audit log.
-	if err := os.MkdirAll(filepath.Dir(cfg.AuditPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfg.AuditPath), 0o750); err != nil {
 		log.Printf("audit dir: %v (logging to stderr)", err)
 	}
 	var auditW = os.Stderr
@@ -89,5 +90,10 @@ func run() error {
 	if os.Getenv("NANOKVM_MCP_TOKEN") == "" {
 		log.Printf("generated bearer token: %s", cfg.BearerToken)
 	}
-	return http.ListenAndServe(cfg.BindAddr, authed)
+	server := &http.Server{
+		Addr:              cfg.BindAddr,
+		Handler:           authed,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	return server.ListenAndServe()
 }
