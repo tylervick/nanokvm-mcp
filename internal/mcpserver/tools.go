@@ -126,7 +126,7 @@ func registerMutating(s *mcp.Server, d Deps) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "nanokvm_input",
-		Description: "Send a batch of HID actions (click, move, type, hotkey, scroll, drag, wait). Mouse coordinates are normalized to [0,1] from the top-left.",
+		Description: "Send a batch of HID actions (click, move, type, hotkey, scroll, drag, wait). Mouse coordinates are normalized to [0,1] from the top-left. A hotkey combines modifiers (ctrl/shift/alt/meta) with ONE non-modifier key; send multiple hotkey actions for key sequences. wait pauses up to 30000 ms.",
 		Annotations: destructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in inputArgs) (*mcp.CallToolResult, any, error) {
 		err := d.Backend.Input(ctx, in.Actions)
