@@ -15,7 +15,12 @@ start() {
 	: "${GOMEMLIMIT:=24MiB}"
 	export GOMEMLIMIT
 	mkdir -p /data/nanokvm-mcp
-	start-stop-daemon -S -q -b -m -p "$PIDFILE" -x "$DAEMON" >>"$LOG" 2>&1
+	# Run via `sh -c 'exec ... >> log'` so the daemon's stdout/stderr reach $LOG.
+	# busybox start-stop-daemon -b redirects the child's stdio to /dev/null before
+	# exec, so redirecting start-stop-daemon itself (">>$LOG") captures nothing;
+	# reopening the fds inside the exec'd shell survives the daemonize. exec keeps
+	# the PID stable so -m records the daemon's real PID.
+	start-stop-daemon -S -q -b -m -p "$PIDFILE" -x /bin/sh -- -c "exec '$DAEMON' >> '$LOG' 2>&1"
 	echo OK
 }
 stop() {
