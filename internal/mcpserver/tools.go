@@ -6,7 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/backend"
+	"github.com/tylervick/nanokvm-mcp/internal/backend"
 )
 
 // ---- read-only tools ----

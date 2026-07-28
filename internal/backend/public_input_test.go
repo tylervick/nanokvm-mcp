@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/coder/websocket"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 func fakeWSKVM(t *testing.T, recv *[][]int) *nanokvm.Client {

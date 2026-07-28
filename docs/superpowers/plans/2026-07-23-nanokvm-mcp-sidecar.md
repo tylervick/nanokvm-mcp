@@ -19,7 +19,7 @@ Copied verbatim from the design spec (`docs/superpowers/specs/2026-07-22-nanokvm
 - **Memory rule (binding):** the `picoclaw` backend MUST NOT decode JPEG — it passes bytes through. Only `public` decodes, and it MUST hard-cap decode resolution so a 4K frame (~33 MB RGBA) can never be decoded.
 - **No mocked transport in tests.** Tests run against an `httptest` fake NanoKVM with real endpoint shapes and status codes.
 - **Default bind:** `127.0.0.1:8080`. Network exposure requires explicit configuration.
-- **Go module path:** `github.com/scgreenhalgh/nanokvm-mcp` (adjust to the final repo owner before first push; used consistently below).
+- **Go module path:** `github.com/tylervick/nanokvm-mcp` (adjust to the final repo owner before first push; used consistently below).
 - **Resolved upstream constants:** `sessionIDHeader = "X-PicoClaw-Session-ID"`; internal token header `X-NanoKVM-Internal-Token`; token file `/etc/kvm/.picoclaw_internal_token`; `AppDir=/kvmapp`, `BackupDir=/root/old`, `CacheDir=/root/.kvmcache`.
 - **Install layout:** binary + config in `/root/nanokvm-mcp/`; audit log in `/data/nanokvm-mcp/`; init script `/etc/init.d/S96nanokvm-mcp`.
 - **Standard firmware response envelope:** `{"code": int, "msg": string, "data": <any>}` where `code == 0` means success.
@@ -66,13 +66,13 @@ deploy/install.sh                     # install script
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: a buildable module `github.com/scgreenhalgh/nanokvm-mcp`; `mise run build` producing `dist/nanokvm-mcp`; `mise run sizecheck`.
+- Produces: a buildable module `github.com/tylervick/nanokvm-mcp`; `mise run build` producing `dist/nanokvm-mcp`; `mise run sizecheck`.
 
 - [ ] **Step 1: Create the Go module and dependency**
 
 ```bash
 cd /Users/tyler/orca/workspaces/nanokvm-mcp/port-and-update-nanokvm-mcp
-go mod init github.com/scgreenhalgh/nanokvm-mcp
+go mod init github.com/tylervick/nanokvm-mcp
 go get github.com/modelcontextprotocol/go-sdk@v1.6.1
 ```
 
@@ -1898,7 +1898,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/backend"
+	"github.com/tylervick/nanokvm-mcp/internal/backend"
 )
 
 type nopBackend struct{}
@@ -1971,9 +1971,9 @@ package mcpserver
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/audit"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/backend"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/audit"
+	"github.com/tylervick/nanokvm-mcp/internal/backend"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 type Deps struct {
@@ -2006,7 +2006,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/backend"
+	"github.com/tylervick/nanokvm-mcp/internal/backend"
 )
 
 // ---- read-only tools ----
@@ -2304,12 +2304,12 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/audit"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/backend"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/config"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/httpauth"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/mcpserver"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/audit"
+	"github.com/tylervick/nanokvm-mcp/internal/backend"
+	"github.com/tylervick/nanokvm-mcp/internal/config"
+	"github.com/tylervick/nanokvm-mcp/internal/httpauth"
+	"github.com/tylervick/nanokvm-mcp/internal/mcpserver"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 var version = "dev"
@@ -2388,7 +2388,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 type Public struct{ kvm *nanokvm.Client }
@@ -2575,7 +2575,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 func jpegOf(w, h int) []byte {
@@ -2645,7 +2645,7 @@ import (
 
 	"golang.org/x/image/draw"
 
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 type Public struct{ kvm *nanokvm.Client }
@@ -2908,7 +2908,7 @@ import (
 	"testing"
 
 	"github.com/coder/websocket"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 func fakeWSKVM(t *testing.T, recv *[][]int) *nanokvm.Client {
@@ -2974,7 +2974,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/hid"
+	"github.com/tylervick/nanokvm-mcp/internal/hid"
 )
 
 func normToKVM(v float64) int {

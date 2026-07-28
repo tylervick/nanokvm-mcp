@@ -11,12 +11,12 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/audit"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/backend"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/config"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/httpauth"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/mcpserver"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/audit"
+	"github.com/tylervick/nanokvm-mcp/internal/backend"
+	"github.com/tylervick/nanokvm-mcp/internal/config"
+	"github.com/tylervick/nanokvm-mcp/internal/httpauth"
+	"github.com/tylervick/nanokvm-mcp/internal/mcpserver"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 var version = "dev"

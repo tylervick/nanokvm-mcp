@@ -1,4 +1,4 @@
-module github.com/scgreenhalgh/nanokvm-mcp
+module github.com/tylervick/nanokvm-mcp
 
 go 1.25.4
 

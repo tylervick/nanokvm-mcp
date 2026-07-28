@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 func jpegOf(w, h int) []byte {

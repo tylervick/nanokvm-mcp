@@ -15,8 +15,8 @@ import (
 	"golang.org/x/image/draw"
 
 	"github.com/coder/websocket"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/hid"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/hid"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 type Public struct{ kvm *nanokvm.Client }
