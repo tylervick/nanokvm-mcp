@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
 	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 

@@ -28,4 +28,9 @@ linters:
 
 formatters:
   enable:
-    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/tylervick/nanokvm-mcp
