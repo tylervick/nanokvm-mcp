@@ -11,20 +11,22 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // G501: EVP_BytesToKey is MD5 by definition; the upstream wire format requires it.
 	"crypto/rand"
 	"encoding/base64"
 	"net/url"
 )
 
-const nanokvmPassphrase = "nanokvm-sipeed-2024"
+// The fixed passphrase is public knowledge (it ships in the firmware's web
+// frontend); it is obfuscation mandated by the wire format, not a secret.
+const nanokvmPassphrase = "nanokvm-sipeed-2024" //nolint:gosec // G101: upstream's published constant, not a credential.
 
 // evpBytesToKey derives key+iv the way OpenSSL EVP_BytesToKey (MD5) does,
 // matching CryptoJS's default passphrase handling.
 func evpBytesToKey(pass, salt []byte, keyLen, ivLen int) (key, iv []byte) {
 	var d, prev []byte
 	for len(d) < keyLen+ivLen {
-		h := md5.New()
+		h := md5.New() //nolint:gosec // G401: see import note — protocol-mandated key derivation.
 		h.Write(prev)
 		h.Write(pass)
 		h.Write(salt)
@@ -36,7 +38,7 @@ func evpBytesToKey(pass, salt []byte, keyLen, ivLen int) (key, iv []byte) {
 
 func pkcs7Pad(b []byte, blockSize int) []byte {
 	n := blockSize - len(b)%blockSize
-	return append(b, bytes.Repeat([]byte{byte(n)}, n)...)
+	return append(b, bytes.Repeat([]byte{byte(n)}, n)...) //nolint:gosec // G115: n is 1..blockSize (16), always fits a byte.
 }
 
 // EncryptPassword returns the URL-encoded base64 of the OpenSSL "Salted__"

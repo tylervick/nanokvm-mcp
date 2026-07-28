@@ -6,6 +6,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+      - run: mise run lint
       - run: mise run test
       - run: mise run sizecheck
       - run: mise run apicheck

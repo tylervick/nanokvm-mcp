@@ -70,3 +70,9 @@ func (f *fakeKVM) on(path string, data any) {
 	defer f.mu.Unlock()
 	f.handlers[path] = func() (any, int) { return data, 0 }
 }
+
+func (f *fakeKVM) onFunc(path string, h func() (any, int)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.handlers[path] = h
+}

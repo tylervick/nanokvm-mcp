@@ -3,10 +3,20 @@ package nanokvm
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// logUnmarshal reports a data payload that didn't match the expected shape.
+// Callers deliberately tolerate it (returning zero values) because firmware
+// variants differ, but it must not be invisible.
+func logUnmarshal(path string, err error) {
+	if err != nil {
+		log.Printf("nanokvm: %s: unexpected data shape: %v", path, err)
+	}
+}
 
 type LED struct {
 	PWR          bool `json:"pwr"`
@@ -42,7 +52,7 @@ func (c *Client) Hardware(ctx context.Context) (Hardware, error) {
 		return Hardware{}, err
 	}
 	var m map[string]any
-	_ = json.Unmarshal(raw, &m)
+	logUnmarshal("/api/vm/hardware", json.Unmarshal(raw, &m))
 	v, _ := m["version"].(string)
 	v = strings.ToLower(v)
 	c.mu.Lock()
@@ -57,7 +67,7 @@ func (c *Client) LEDStatus(ctx context.Context) (LED, error) {
 		return LED{}, err
 	}
 	var led LED
-	_ = json.Unmarshal(raw, &led)
+	logUnmarshal("/api/vm/gpio", json.Unmarshal(raw, &led))
 	// HDD LED exists only on alpha hardware (upstream gpio.go hardcodes hdd=false
 	// otherwise). Report availability so the tool does not present a fake reading.
 	c.mu.Lock()
@@ -78,8 +88,14 @@ func (c *Client) HDMIStatus(ctx context.Context) (map[string]any, error) {
 		return nil, err
 	}
 	var m map[string]any
-	_ = json.Unmarshal(raw, &m)
+	logUnmarshal("/api/vm/hdmi", json.Unmarshal(raw, &m))
 	return m, nil
+}
+
+// ResetHID resets the USB HID gadget.
+func (c *Client) ResetHID(ctx context.Context) error {
+	_, err := c.Do(ctx, http.MethodPost, "/api/hid/reset", nil)
+	return err
 }
 
 func (c *Client) HDMIReset(ctx context.Context) error {
@@ -93,6 +109,6 @@ func (c *Client) Info(ctx context.Context) (map[string]any, error) {
 		return nil, err
 	}
 	var m map[string]any
-	_ = json.Unmarshal(raw, &m)
+	logUnmarshal("/api/vm/info", json.Unmarshal(raw, &m))
 	return m, nil
 }

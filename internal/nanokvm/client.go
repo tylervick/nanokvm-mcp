@@ -83,7 +83,7 @@ func (c *Client) login(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	var env envelope
 	if err := json.Unmarshal(raw, &env); err != nil {
@@ -149,7 +149,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (json.Ra
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == http.StatusUnauthorized {
 		return nil, ErrAuth

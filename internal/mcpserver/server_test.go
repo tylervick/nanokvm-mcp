@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/audit"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/backend"
+	"github.com/tylervick/nanokvm-mcp/internal/audit"
+	"github.com/tylervick/nanokvm-mcp/internal/backend"
 )
 
 type nopBackend struct{}

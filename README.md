@@ -40,7 +40,7 @@ touch `/root/nanokvm-mcp/`.
 
 ## Building
 
-Requires [mise](https://mise.jdx.dev/) (pins Go 1.25.4) and no CGO toolchain — the daemon
+Requires [mise](https://mise.jdx.dev/) (pins Go 1.26.5) and no CGO toolchain — the daemon
 is a static `CGO_ENABLED=0` build for `linux/riscv64`.
 
 ```sh
@@ -50,6 +50,24 @@ mise run test         # go test ./...
 mise run apicheck     # checks that our route assumptions still match live upstream
 mise run sizecheck    # builds, fails if the binary exceeds 15 MB
 ```
+
+The build stamps the binary with `git describe --tags --always --dirty`, reported in the
+startup log line (`nanokvm-mcp v0.1.0: backend=...`). Builds from an untagged checkout
+show the commit hash instead.
+
+### Releases
+
+Releases are plain annotated git tags — there is no separate release script:
+
+```sh
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
+mise run build   # dist/nanokvm-mcp now reports v0.1.0
+```
+
+Tags follow [semver](https://semver.org) (`vMAJOR.MINOR.PATCH`). Tag from a clean
+checkout of `main` so the version doesn't carry a `-dirty` suffix, then attach
+`dist/nanokvm-mcp` to the GitHub release for users who don't cross-compile.
 
 ## Installing on a device
 
@@ -73,6 +91,24 @@ To manage the service directly on the device:
 /etc/init.d/S96nanokvm-mcp restart
 ```
 
+### First-run checklist (learned on real hardware)
+
+Three things account for nearly every "it deployed but doesn't work" report:
+
+1. **Set the real web-UI credentials.** The six REST-backed tools (LED, HDMI, info,
+   hardware, ISO listing/mounting) authenticate against the firmware with
+   `NANOKVM_USER`/`NANOKVM_PASS`. Your device is almost certainly *not* `admin`/`admin`
+   anymore — the web UI forces a password change on first login. Put the real values in
+   `/root/nanokvm-mcp/nanokvm-mcp.env`. The symptom of stale creds is asymmetric:
+   `nanokvm_screenshot` and `nanokvm_input` keep working (they use the firmware's internal
+   token, not your password) while every other tool fails to authenticate.
+2. **Set an explicit `NANOKVM_MCP_TOKEN`.** If you leave it unset, a fresh token is
+   generated at every restart and you have to fish it out of
+   `/data/nanokvm-mcp/daemon.log` each time. Generate one once
+   (`head -c 32 /dev/urandom | base64`) and put it in `nanokvm-mcp.env`.
+3. **Check liveness via the pidfile.** The device's busybox has no `pgrep`; use
+   `cat /var/run/nanokvm-mcp.pid` and `kill -0 $(cat /var/run/nanokvm-mcp.pid)`.
+
 ## Configuration
 
 Configuration is read from the environment; the init script sources
@@ -82,7 +118,7 @@ Configuration is read from the environment; the init script sources
 |---|---|---|
 | `NANOKVM_HOST` | *(required)* | Host[:port] of the NanoKVM's own HTTP API. On-device this is normally `127.0.0.1`. |
 | `NANOKVM_USER` | `admin` | NanoKVM web UI username, used to authenticate against the firmware API. |
-| `NANOKVM_PASS` | `admin` | NanoKVM web UI password. Change this from the firmware default. |
+| `NANOKVM_PASS` | `admin` | NanoKVM web UI password. Must be the device's *actual* web password — see the [first-run checklist](#first-run-checklist-learned-on-real-hardware). |
 | `NANOKVM_HTTPS` | `false` | Use `https`/`wss` instead of `http`/`ws` when talking to `NANOKVM_HOST`. |
 | `NANOKVM_VERIFY_SSL` | `true` | Verify the TLS certificate when `NANOKVM_HTTPS=true`. |
 | `NANOKVM_MCP_BIND` | `127.0.0.1:8080` | Address:port the MCP HTTP endpoint listens on. Loopback by default — see [Security](#security-model). |
@@ -133,7 +169,7 @@ Point your MCP client at the daemon's HTTP endpoint with the bearer token in the
     "nanokvm": {
       "url": "http://<device>:8080/",
       "headers": {
-        "Authorization": "Bearer <token from nanokvm-mcp.env or the daemon log>"
+        "Authorization": "Bearer ${NANOKVM_MCP_TOKEN}"
       }
     }
   }
@@ -144,6 +180,34 @@ Replace `<device>` with the NanoKVM's Tailscale address (or `127.0.0.1` plus an 
 tunnel/port-forward — see [Security](#security-model) for why the LAN address is
 discouraged) and `<token>` with the value of `NANOKVM_MCP_TOKEN`, or the token printed to
 `/data/nanokvm-mcp/daemon.log` if you didn't set one.
+
+### Over an SSH tunnel
+
+With the default loopback bind, forward the port from your machine (the keepalive matters
+— an idle MCP session will otherwise drop the tunnel):
+
+```sh
+ssh -N -L 8080:127.0.0.1:8080 -o ServerAliveInterval=30 root@<device>
+```
+
+Then the endpoint is `http://127.0.0.1:8080/` locally. Keep the token out of your
+shell history: export it once (`export NANOKVM_MCP_TOKEN=...` with a leading space,
+or `export NANOKVM_MCP_TOKEN=$(cat token-file)`) and reference the variable so the
+literal value never appears on a command line. Verify with MCP Inspector:
+
+```sh
+npx @modelcontextprotocol/inspector --cli http://127.0.0.1:8080/ \
+  --transport http --header "Authorization: Bearer ${NANOKVM_MCP_TOKEN}" --method tools/list
+```
+
+Or add it to Claude Code — single quotes matter: they pass the `${VAR}` reference
+through unexpanded, and Claude Code's `.mcp.json` expands it at connection time,
+so neither your shell history nor the saved config ever contains the secret:
+
+```sh
+claude mcp add --transport http nanokvm http://127.0.0.1:8080/ \
+  --header 'Authorization: Bearer ${NANOKVM_MCP_TOKEN}'
+```
 
 ## Tools
 

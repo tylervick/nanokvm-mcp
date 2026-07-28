@@ -20,7 +20,13 @@ start() {
 	# exec, so redirecting start-stop-daemon itself (">>$LOG") captures nothing;
 	# reopening the fds inside the exec'd shell survives the daemonize. exec keeps
 	# the PID stable so -m records the daemon's real PID.
-	start-stop-daemon -S -q -b -m -p "$PIDFILE" -x /bin/sh -- -c "exec '$DAEMON' >> '$LOG' 2>&1"
+	# The trailing redirections detach start-stop-daemon itself from the calling
+	# terminal; without them, `ssh <device> /etc/init.d/S96nanokvm-mcp restart`
+	# hangs because the daemonized child keeps the ssh channel's fds open.
+	if ! start-stop-daemon -S -q -b -m -p "$PIDFILE" -x /bin/sh -- -c "exec '$DAEMON' >> '$LOG' 2>&1" </dev/null >/dev/null 2>>"$LOG"; then
+		echo FAIL
+		return 1
+	fi
 	echo OK
 }
 stop() {

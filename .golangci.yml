@@ -1,0 +1,31 @@
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - gosec
+    - misspell
+    - nolintlint
+    - unconvert
+  settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    gosec:
+      excludes:
+        # G124 flags http.Cookie without Secure/HttpOnly, but every cookie
+        # here is attached to *outgoing client* requests, where those
+        # attributes are server-set response fields and have no meaning.
+        - G124
+  exclusions:
+    rules:
+      # Tests run against local httptest fakes: fixed creds, unchecked
+      # writes/closes, and fake tokens are deliberate there.
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt

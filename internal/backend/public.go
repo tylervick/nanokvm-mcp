@@ -15,8 +15,8 @@ import (
 	"golang.org/x/image/draw"
 
 	"github.com/coder/websocket"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/hid"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/hid"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 type Public struct{ kvm *nanokvm.Client }
@@ -44,7 +44,7 @@ func (p *Public) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, err
 	if err != nil {
 		return Shot{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return Shot{}, fmt.Errorf("public screenshot: HTTP %d", resp.StatusCode)
 	}
@@ -115,6 +115,18 @@ func resizeJPEG(in []byte, opts ScreenshotOpts) (Shot, error) {
 	return Shot{JPEG: out.Bytes(), Width: nw, Height: nh}, nil
 }
 
+// sleepCtx sleeps for ms milliseconds or until ctx is done, whichever is first.
+func sleepCtx(ctx context.Context, ms int) error {
+	t := time.NewTimer(time.Duration(ms) * time.Millisecond)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func normToKVM(v float64) int {
 	k := int(v*0x7FFE) + 1
 	if k < 1 {
@@ -143,7 +155,9 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 	if onlyText {
 		for _, a := range actions {
 			if a.Action == "wait" {
-				time.Sleep(time.Duration(a.DurationMs) * time.Millisecond)
+				if err := sleepCtx(ctx, a.DurationMs); err != nil {
+					return err
+				}
 				continue
 			}
 			if _, err := p.kvm.Do(ctx, http.MethodPost, "/api/hid/paste",
@@ -165,7 +179,7 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = c.Close(websocket.StatusNormalClosure, "") }()
 
 	send := func(msg []int) error {
 		b, _ := json.Marshal(msg)
@@ -175,7 +189,9 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 	for _, a := range actions {
 		switch a.Action {
 		case "wait":
-			time.Sleep(time.Duration(a.DurationMs) * time.Millisecond)
+			if err := sleepCtx(ctx, a.DurationMs); err != nil {
+				return err
+			}
 		case "move":
 			if a.X == nil || a.Y == nil {
 				return fmt.Errorf("move requires x and y")

@@ -12,7 +12,7 @@ func (c *Client) ListImages(ctx context.Context) ([]any, error) {
 		return nil, err
 	}
 	var out []any
-	_ = json.Unmarshal(raw, &out)
+	logUnmarshal("/api/storage/image", json.Unmarshal(raw, &out))
 	return out, nil
 }
 
@@ -33,6 +33,6 @@ func (c *Client) MountedImage(ctx context.Context) (map[string]any, error) {
 		return nil, err
 	}
 	var m map[string]any
-	_ = json.Unmarshal(raw, &m)
+	logUnmarshal("/api/storage/image/mounted", json.Unmarshal(raw, &m))
 	return m, nil
 }

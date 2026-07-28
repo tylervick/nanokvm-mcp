@@ -4,9 +4,9 @@ package mcpserver
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/audit"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/backend"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/audit"
+	"github.com/tylervick/nanokvm-mcp/internal/backend"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 type Deps struct {

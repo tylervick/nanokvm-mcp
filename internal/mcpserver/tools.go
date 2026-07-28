@@ -6,7 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/backend"
+	"github.com/tylervick/nanokvm-mcp/internal/backend"
 )
 
 // ---- read-only tools ----
@@ -126,7 +126,7 @@ func registerMutating(s *mcp.Server, d Deps) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "nanokvm_input",
-		Description: "Send a batch of HID actions (click, move, type, hotkey, scroll, drag, wait). Mouse coordinates are normalized to [0,1] from the top-left.",
+		Description: "Send a batch of HID actions (click, move, type, hotkey, scroll, drag, wait). Mouse coordinates are normalized to [0,1] from the top-left. A hotkey combines modifiers (ctrl/shift/alt/meta) with ONE non-modifier key; send multiple hotkey actions for key sequences. wait pauses up to 30000 ms.",
 		Annotations: destructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in inputArgs) (*mcp.CallToolResult, any, error) {
 		err := d.Backend.Input(ctx, in.Actions)
@@ -211,7 +211,7 @@ func registerMutating(s *mcp.Server, d Deps) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "nanokvm_reset_hid", Description: "Reset the USB HID gadget if keyboard/mouse input stops working.", Annotations: idempotent,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
-		_, err := d.KVM.Do(ctx, "POST", "/api/hid/reset", nil)
+		err := d.KVM.ResetHID(ctx)
 		rec("nanokvm_reset_hid", map[string]any{}, err)
 		if err != nil {
 			return nil, nil, err

@@ -1,5 +1,6 @@
 [tools]
-go = "1.25.4"
+go = "1.26.5"
+golangci-lint = "2.12.2"
 
 [settings]
 # Prepend mise-managed tool dirs ahead of everything else on PATH. Without
@@ -11,13 +12,19 @@ activate_aggressive = true
 CGO_ENABLED = "0"
 
 [tasks.build]
-run = "GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags='-s -w' -o dist/nanokvm-mcp ./cmd/nanokvm-mcp"
+run = 'GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty)" -o dist/nanokvm-mcp ./cmd/nanokvm-mcp'
 
 [tasks.build-host]
-run = "go build -trimpath -ldflags='-s -w' -o dist/nanokvm-mcp-host ./cmd/nanokvm-mcp"
+run = 'go build -trimpath -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty)" -o dist/nanokvm-mcp-host ./cmd/nanokvm-mcp'
 
 [tasks.test]
 run = "go test -race ./..."
+# The race detector needs cgo on linux (macOS links it internally without).
+# Only the test task gets cgo; device builds stay CGO_ENABLED=0 static.
+env = { CGO_ENABLED = "1" }
+
+[tasks.lint]
+run = "golangci-lint run ./..."
 
 [tasks.apicheck]
 run = "go test ./tools/apicheck/..."

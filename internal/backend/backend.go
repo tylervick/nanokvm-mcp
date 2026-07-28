@@ -44,6 +44,10 @@ type KVMBackend interface {
 	Input(ctx context.Context, actions []Action) error
 }
 
+// MaxWaitMs caps a single `wait` action; anything longer is a client bug, and
+// unbounded sleeps would pin the websocket (and the session lock) indefinitely.
+const MaxWaitMs = 30_000
+
 var validVerbs = map[string]bool{
 	"click": true, "move": true, "type": true, "hotkey": true,
 	"scroll": true, "drag": true, "wait": true,
@@ -59,6 +63,12 @@ func ValidateActions(actions []Action) error {
 	for i, a := range actions {
 		if !validVerbs[a.Action] {
 			return fmt.Errorf("action %d: unknown verb %q", i, a.Action)
+		}
+		if a.Button != "" && a.Button != "left" && a.Button != "middle" && a.Button != "right" {
+			return fmt.Errorf("action %d: unknown mouse button %q (want left, middle, or right)", i, a.Button)
+		}
+		if a.Action == "wait" && (a.DurationMs < 0 || a.DurationMs > MaxWaitMs) {
+			return fmt.Errorf("action %d: wait duration_ms must be 0..%d", i, MaxWaitMs)
 		}
 		if !inRange(a.X) || !inRange(a.Y) {
 			return fmt.Errorf("action %d: coordinates must be normalized to [0,1]", i)

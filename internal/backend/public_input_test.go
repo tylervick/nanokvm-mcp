@@ -3,12 +3,14 @@ package backend
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
-	"github.com/scgreenhalgh/nanokvm-mcp/internal/nanokvm"
+	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )
 
 func fakeWSKVM(t *testing.T, recv *[][]int) *nanokvm.Client {
@@ -59,6 +61,23 @@ func TestPublicInputClickSendsWSMessages(t *testing.T) {
 	// A click issues at least a down and an up event (type 2).
 	if recv[0][0] != 2 {
 		t.Errorf("expected mouse event type 2, got %v", recv[0])
+	}
+}
+
+func TestPublicInputWaitHonorsContext(t *testing.T) {
+	// No HTTP traffic expected: a wait-only batch never dials anything.
+	p := NewPublic(nanokvm.New(nanokvm.ClientConfig{BaseURL: "http://127.0.0.1:0"}))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	err := p.Input(ctx, []Action{{Action: "wait", DurationMs: MaxWaitMs}})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Input with canceled ctx = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("wait ignored cancellation, blocked %v", elapsed)
 	}
 }
 
