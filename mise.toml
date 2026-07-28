@@ -19,7 +19,7 @@ run = 'GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags="-s -w -X main.vers
 run = 'go build -trimpath -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty)" -o dist/nanokvm-mcp-host ./cmd/nanokvm-mcp'
 
 [tasks.test]
-run = "go test -race ./..."
+run = "go test -race -shuffle=on ./..."
 # The race detector needs cgo on linux (macOS links it internally without).
 # Only the test task gets cgo; device builds stay CGO_ENABLED=0 static.
 env = { CGO_ENABLED = "1" }
