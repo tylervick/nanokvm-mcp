@@ -19,6 +19,9 @@ run = 'go build -trimpath -ldflags="-s -w -X main.version=$(git describe --tags 
 
 [tasks.test]
 run = "go test -race ./..."
+# The race detector needs cgo on linux (macOS links it internally without).
+# Only the test task gets cgo; device builds stay CGO_ENABLED=0 static.
+env = { CGO_ENABLED = "1" }
 
 [tasks.lint]
 run = "golangci-lint run ./..."
