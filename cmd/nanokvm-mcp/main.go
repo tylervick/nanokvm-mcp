@@ -4,10 +4,13 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,12 +26,14 @@ import (
 var version = "dev"
 
 func main() {
-	if err := run(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run() error {
+func run(ctx context.Context) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -61,8 +66,9 @@ func run() error {
 		log.Printf("audit dir: %v (logging to stderr)", err)
 	}
 	var auditW = os.Stderr
+	var auditFile *os.File
 	if f, err := os.OpenFile(cfg.AuditPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
-		auditW = f
+		auditW, auditFile = f, f
 	} else {
 		log.Printf("audit file: %v (logging to stderr)", err)
 	}
@@ -70,7 +76,7 @@ func run() error {
 
 	// Backend selection.
 	pub := backend.NewPublic(kvm) // Task 15
-	be, err := backend.Select(context.Background(), backend.Deps{
+	be, err := backend.Select(ctx, backend.Deps{
 		BaseURL:   baseURL,
 		TokenPath: backend.DefaultTokenPath,
 		SessionID: "nanokvm-mcp",
@@ -95,5 +101,27 @@ func run() error {
 		Handler:           authed,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	return server.ListenAndServe()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.ListenAndServe() }()
+
+	select {
+	case err := <-serveErr:
+		return err
+	case <-ctx.Done():
+		log.Printf("shutting down")
+		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := server.Shutdown(sctx)
+		if errors.Is(err, context.DeadlineExceeded) {
+			err = nil // in-flight requests were cut off; still a deliberate stop
+		}
+		// Close the audit log only after Shutdown so in-flight mutating
+		// calls still get their audit lines.
+		if auditFile != nil {
+			if cerr := auditFile.Close(); err == nil {
+				err = cerr
+			}
+		}
+		return err
+	}
 }
