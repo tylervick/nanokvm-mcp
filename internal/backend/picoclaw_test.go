@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -42,6 +43,32 @@ func TestPicoclawScreenshotPassesThroughBytes(t *testing.T) {
 	}
 	if len(shot.JPEG) != 4 || shot.JPEG[0] != 0xFF {
 		t.Errorf("expected raw jpeg bytes passed through, got %v", shot.JPEG)
+	}
+}
+
+func TestPicoclawScreenshotForcesFreshFrame(t *testing.T) {
+	// picoclaw serves a CACHED frame when width, height, and quality are all unset.
+	// With no ScreenshotOpts, our backend must still bust that cache (send a quality)
+	// so an MCP screenshot reflects the live screen.
+	var gotQuery string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/picoclaw/screenshot", func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Write([]byte{0xFF, 0xD8, 0xFF, 0xD9})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	p := NewPicoclaw(srv.URL, "tok", "sess-1", srv.Client())
+	if _, err := p.Screenshot(context.Background(), ScreenshotOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gotQuery, "quality=") {
+		t.Errorf("no-opts screenshot must send a cache-busting quality param, got query %q", gotQuery)
+	}
+	if strings.Contains(gotQuery, "format=base64") {
+		t.Errorf("screenshot must not request base64 (raw passthrough), got query %q", gotQuery)
 	}
 }
 

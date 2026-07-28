@@ -17,6 +17,10 @@ const (
 	InternalTokenHeader = "X-NanoKVM-Internal-Token"
 	SessionIDHeader     = "X-PicoClaw-Session-ID"
 	DefaultTokenPath    = "/etc/kvm/.picoclaw_internal_token"
+
+	// defaultFreshQuality is applied to a no-options screenshot to bust picoclaw's
+	// cached-frame path (canUseCachedFrame requires width, height, and quality all 0).
+	defaultFreshQuality = 80
 )
 
 type Picoclaw struct {
@@ -60,10 +64,14 @@ func (p *Picoclaw) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, e
 	if opts.Quality > 0 {
 		q.Set("quality", strconv.Itoa(opts.Quality))
 	}
-	u := p.baseURL + "/api/picoclaw/screenshot"
-	if len(q) > 0 {
-		u += "?" + q.Encode()
+	// picoclaw returns a CACHED frame when width, height, and quality are all unset
+	// (its canUseCachedFrame path). An MCP screenshot must reflect the live screen, so
+	// when the caller specifies none of them, force a fresh capture by requesting a
+	// default quality at native resolution — this busts the cache without resizing.
+	if len(q) == 0 {
+		q.Set("quality", strconv.Itoa(defaultFreshQuality))
 	}
+	u := p.baseURL + "/api/picoclaw/screenshot?" + q.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return Shot{}, err
