@@ -1,6 +1,7 @@
 [tools]
 go = "1.26.5"
 golangci-lint = "2.12.2"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.6.0"
 
 [settings]
 # Prepend mise-managed tool dirs ahead of everything else on PATH. Without
@@ -25,6 +26,9 @@ env = { CGO_ENABLED = "1" }
 
 [tasks.lint]
 run = "golangci-lint run ./..."
+
+[tasks.vulncheck]
+run = "govulncheck ./..."
 
 [tasks.apicheck]
 run = "go test ./tools/apicheck/..."
