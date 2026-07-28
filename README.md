@@ -51,6 +51,24 @@ mise run apicheck     # checks that our route assumptions still match live upstr
 mise run sizecheck    # builds, fails if the binary exceeds 15 MB
 ```
 
+The build stamps the binary with `git describe --tags --always --dirty`, reported in the
+startup log line (`nanokvm-mcp v0.1.0: backend=...`). Builds from an untagged checkout
+show the commit hash instead.
+
+### Releases
+
+Releases are plain annotated git tags — there is no separate release script:
+
+```sh
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
+mise run build   # dist/nanokvm-mcp now reports v0.1.0
+```
+
+Tags follow [semver](https://semver.org) (`vMAJOR.MINOR.PATCH`). Tag from a clean
+checkout of `main` so the version doesn't carry a `-dirty` suffix, then attach
+`dist/nanokvm-mcp` to the GitHub release for users who don't cross-compile.
+
 ## Installing on a device
 
 From a machine with SSH/SCP access to the NanoKVM (password auth; the stock firmware has

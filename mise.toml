@@ -11,10 +11,10 @@ activate_aggressive = true
 CGO_ENABLED = "0"
 
 [tasks.build]
-run = "GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags='-s -w' -o dist/nanokvm-mcp ./cmd/nanokvm-mcp"
+run = 'GOOS=linux GOARCH=riscv64 go build -trimpath -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty)" -o dist/nanokvm-mcp ./cmd/nanokvm-mcp'
 
 [tasks.build-host]
-run = "go build -trimpath -ldflags='-s -w' -o dist/nanokvm-mcp-host ./cmd/nanokvm-mcp"
+run = 'go build -trimpath -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty)" -o dist/nanokvm-mcp-host ./cmd/nanokvm-mcp'
 
 [tasks.test]
 run = "go test -race ./..."
