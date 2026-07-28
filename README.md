@@ -40,7 +40,7 @@ touch `/root/nanokvm-mcp/`.
 
 ## Building
 
-Requires [mise](https://mise.jdx.dev/) (pins Go 1.25.4) and no CGO toolchain — the daemon
+Requires [mise](https://mise.jdx.dev/) (pins Go 1.26.5) and no CGO toolchain — the daemon
 is a static `CGO_ENABLED=0` build for `linux/riscv64`.
 
 ```sh
