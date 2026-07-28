@@ -92,6 +92,12 @@ func (c *Client) HDMIStatus(ctx context.Context) (map[string]any, error) {
 	return m, nil
 }
 
+// ResetHID resets the USB HID gadget.
+func (c *Client) ResetHID(ctx context.Context) error {
+	_, err := c.Do(ctx, http.MethodPost, "/api/hid/reset", nil)
+	return err
+}
+
 func (c *Client) HDMIReset(ctx context.Context) error {
 	_, err := c.Do(ctx, http.MethodPost, "/api/vm/hdmi/reset", nil)
 	return err

@@ -69,6 +69,24 @@ func TestLEDStatusConcurrent(t *testing.T) {
 	}
 }
 
+func TestResetHIDPostsHidReset(t *testing.T) {
+	f := newFakeKVM()
+	defer f.Close()
+	called := false
+	f.onFunc("/api/hid/reset", func() (any, int) {
+		called = true
+		return map[string]any{}, 0
+	})
+
+	c := New(ClientConfig{BaseURL: f.URL, Username: "u", Password: "p"})
+	if err := c.ResetHID(context.Background()); err != nil {
+		t.Fatalf("ResetHID: %v", err)
+	}
+	if !called {
+		t.Error("ResetHID did not hit /api/hid/reset")
+	}
+}
+
 func TestPowerCycleSequences(t *testing.T) {
 	f := newFakeKVM()
 	defer f.Close()

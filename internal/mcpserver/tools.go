@@ -211,7 +211,7 @@ func registerMutating(s *mcp.Server, d Deps) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "nanokvm_reset_hid", Description: "Reset the USB HID gadget if keyboard/mouse input stops working.", Annotations: idempotent,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
-		_, err := d.KVM.Do(ctx, "POST", "/api/hid/reset", nil)
+		err := d.KVM.ResetHID(ctx)
 		rec("nanokvm_reset_hid", map[string]any{}, err)
 		if err != nil {
 			return nil, nil, err
