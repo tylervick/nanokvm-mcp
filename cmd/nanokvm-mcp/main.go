@@ -106,6 +106,9 @@ func run(ctx context.Context) error {
 
 	select {
 	case err := <-serveErr:
+		if auditFile != nil {
+			_ = auditFile.Close()
+		}
 		return err
 	case <-ctx.Done():
 		log.Printf("shutting down")

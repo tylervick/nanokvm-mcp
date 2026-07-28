@@ -12,8 +12,8 @@ Initial release line. Everything below is part of the first public version.
 
 - MCP server (streamable HTTP, bearer auth) running on the NanoKVM itself as a
   static riscv64 binary, exposing 14 tools: screenshot, LED/HDMI status, device
-  info/hardware, ISO list/mount/unmount, batched HID input, power/power-cycle,
-  HDMI reset, and HID reset.
+  info/hardware, ISO list/mounted-image query/mount/unmount, batched HID input,
+  power/power-cycle, HDMI reset, and HID reset.
 - Two capture/input backends: `picoclaw` (firmware-internal API, raw JPEG
   passthrough, preferred) and `public` (MJPEG + WebSocket fallback with a hard
   2.1 Mpx decode cap), selected once at startup.

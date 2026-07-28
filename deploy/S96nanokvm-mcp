@@ -23,7 +23,10 @@ start() {
 	# The trailing redirections detach start-stop-daemon itself from the calling
 	# terminal; without them, `ssh <device> /etc/init.d/S96nanokvm-mcp restart`
 	# hangs because the daemonized child keeps the ssh channel's fds open.
-	start-stop-daemon -S -q -b -m -p "$PIDFILE" -x /bin/sh -- -c "exec '$DAEMON' >> '$LOG' 2>&1" </dev/null >/dev/null 2>&1
+	if ! start-stop-daemon -S -q -b -m -p "$PIDFILE" -x /bin/sh -- -c "exec '$DAEMON' >> '$LOG' 2>&1" </dev/null >/dev/null 2>>"$LOG"; then
+		echo FAIL
+		return 1
+	fi
 	echo OK
 }
 stop() {

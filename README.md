@@ -169,7 +169,7 @@ Point your MCP client at the daemon's HTTP endpoint with the bearer token in the
     "nanokvm": {
       "url": "http://<device>:8080/",
       "headers": {
-        "Authorization": "Bearer <token from nanokvm-mcp.env or the daemon log>"
+        "Authorization": "Bearer ${NANOKVM_MCP_TOKEN}"
       }
     }
   }
@@ -190,18 +190,23 @@ With the default loopback bind, forward the port from your machine (the keepaliv
 ssh -N -L 8080:127.0.0.1:8080 -o ServerAliveInterval=30 root@<device>
 ```
 
-Then the endpoint is `http://127.0.0.1:8080/` locally. Verify with MCP Inspector:
+Then the endpoint is `http://127.0.0.1:8080/` locally. Keep the token out of your
+shell history: export it once (`export NANOKVM_MCP_TOKEN=...` with a leading space,
+or `export NANOKVM_MCP_TOKEN=$(cat token-file)`) and reference the variable so the
+literal value never appears on a command line. Verify with MCP Inspector:
 
 ```sh
 npx @modelcontextprotocol/inspector --cli http://127.0.0.1:8080/ \
-  --transport http --header "Authorization: Bearer <token>" --method tools/list
+  --transport http --header "Authorization: Bearer ${NANOKVM_MCP_TOKEN}" --method tools/list
 ```
 
-Or add it to Claude Code:
+Or add it to Claude Code — single quotes matter: they pass the `${VAR}` reference
+through unexpanded, and Claude Code's `.mcp.json` expands it at connection time,
+so neither your shell history nor the saved config ever contains the secret:
 
 ```sh
 claude mcp add --transport http nanokvm http://127.0.0.1:8080/ \
-  --header "Authorization: Bearer <token>"
+  --header 'Authorization: Bearer ${NANOKVM_MCP_TOKEN}'
 ```
 
 ## Tools

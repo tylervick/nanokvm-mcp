@@ -57,8 +57,17 @@ func startServer(t *testing.T, ctx context.Context) (addr string, errCh chan err
 
 func TestServerRejectsUnauthed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	addr, _ := startServer(t, ctx)
+	addr, errCh := startServer(t, ctx)
+	// Join the server goroutine before t.Setenv cleanups run, so it can't
+	// overlap the next test's environment or listener.
+	defer func() {
+		cancel()
+		select {
+		case <-errCh:
+		case <-time.After(5 * time.Second):
+			t.Error("run() did not exit after cancellation")
+		}
+	}()
 
 	// No Authorization header -> 401.
 	resp, err := http.Post(fmt.Sprintf("http://%s/", addr), "application/json",
@@ -70,6 +79,33 @@ func TestServerRejectsUnauthed(t *testing.T) {
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("want 401 without bearer, got %d", resp.StatusCode)
+	}
+}
+
+func TestServerReportsBindFailure(t *testing.T) {
+	// Occupy a port so ListenAndServe fails immediately.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	t.Setenv("NANOKVM_HOST", "127.0.0.1")
+	t.Setenv("NANOKVM_MCP_TOKEN", "smoke-token")
+	t.Setenv("NANOKVM_MCP_BIND", l.Addr().String())
+	t.Setenv("NANOKVM_MCP_AUDIT", t.TempDir()+"/audit.log")
+	t.Setenv("NANOKVM_MCP_READONLY", "true")
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- run(context.Background()) }()
+
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Error("run() should return the bind error, got nil")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("run() did not return after failing to bind")
 	}
 }
 
