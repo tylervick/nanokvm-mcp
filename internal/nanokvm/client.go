@@ -22,8 +22,11 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	cfg       ClientConfig
-	http      *http.Client
+	cfg  ClientConfig
+	http *http.Client
+	// loginMu serializes login attempts. It is separate from mu because it is
+	// held across the login round-trip, which mu (a short state lock) must not be.
+	loginMu   sync.Mutex
 	mu        sync.Mutex
 	token     string
 	hwVersion string // cached hardware version, guarded by mu
@@ -58,6 +61,19 @@ func (c *Client) Token(ctx context.Context) (string, error) {
 	tok := c.token
 	c.mu.Unlock()
 	if tok != "" {
+		return tok, nil
+	}
+
+	// Serialize logins so concurrent callers that all saw an empty token create
+	// one firmware session instead of one each. sync.Once cannot be used: Do()
+	// deliberately clears the token on auth failure so a later call re-logs in.
+	c.loginMu.Lock()
+	defer c.loginMu.Unlock()
+	c.mu.Lock()
+	tok = c.token
+	c.mu.Unlock()
+	if tok != "" {
+		// Another goroutine logged in while we waited for loginMu.
 		return tok, nil
 	}
 	if err := c.login(ctx); err != nil {

@@ -25,7 +25,13 @@ func newFakeKVM() *fakeKVM {
 	mux.HandleFunc("/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.loginCalls++
+		h := f.handlers[r.URL.Path]
 		f.mu.Unlock()
+		// An onFunc override runs for its side effects (e.g. latency) before the
+		// canonical login response; the login envelope itself stays fixed.
+		if h != nil {
+			h()
+		}
 		http.SetCookie(w, &http.Cookie{Name: "nano-kvm-token", Value: f.token})
 		writeEnv(w, 0, "ok", map[string]string{"token": f.token})
 	})
