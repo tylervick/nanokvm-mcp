@@ -84,6 +84,7 @@ func (p *Picoclaw) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, e
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
+		drainBody(resp.Body)
 		return Shot{}, fmt.Errorf("picoclaw screenshot: HTTP %d", resp.StatusCode)
 	}
 	jpeg, err := io.ReadAll(resp.Body)

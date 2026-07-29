@@ -47,6 +47,7 @@ func (p *Public) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
+		drainBody(resp.Body)
 		return Shot{}, fmt.Errorf("public screenshot: HTTP %d", resp.StatusCode)
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxFrameBytes))
@@ -104,7 +105,9 @@ func resizeJPEG(in []byte, opts ScreenshotOpts) (Shot, error) {
 		nh = opts.Height
 	}
 	dst := image.NewRGBA(image.Rect(0, 0, nw, nh))
-	draw.CatmullRom.Scale(dst, dst.Bounds(), src, b, draw.Over, nil)
+	// draw.Src: the JPEG source is opaque, so no alpha blending is needed;
+	// Src skips the read-modify-write of Over on this CPU-bound path.
+	draw.CatmullRom.Scale(dst, dst.Bounds(), src, b, draw.Src, nil)
 	q := opts.Quality
 	if q <= 0 {
 		q = 80
