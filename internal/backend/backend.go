@@ -5,6 +5,7 @@ package backend
 import (
 	"context"
 	"fmt"
+	"io"
 )
 
 type Point struct {
@@ -47,6 +48,12 @@ type KVMBackend interface {
 // MaxWaitMs caps a single `wait` action; anything longer is a client bug, and
 // unbounded sleeps would pin the websocket (and the session lock) indefinitely.
 const MaxWaitMs = 30_000
+
+// drainBody consumes (a bounded amount of) an error-path response body so the
+// underlying connection can be reused instead of torn down.
+func drainBody(r io.Reader) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(r, 4096))
+}
 
 var validVerbs = map[string]bool{
 	"click": true, "move": true, "type": true, "hotkey": true,
