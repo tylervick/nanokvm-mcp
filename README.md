@@ -235,6 +235,16 @@ All tools carry MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentH
 client can distinguish, for example, reading the power LED from force-shutting-down the
 target.
 
+### Capture lags input by about one frame
+
+On real hardware (firmware 2.4.3) the video capture pipeline trails HID input by roughly one
+frame, so a `nanokvm_screenshot` taken immediately after `nanokvm_input` can come back showing
+the screen *before* the input landed. This is firmware behavior, not a bug in this daemon.
+
+If you are driving a screenshot → act → screenshot loop, let the frame catch up: end the
+`nanokvm_input` batch with a `wait` action of ~100–200 ms (`{"action":"wait","duration_ms":150}`),
+or take a second screenshot and use that one.
+
 ## Development
 
 ```sh
