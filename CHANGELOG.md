@@ -6,7 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-Initial release line. Everything below is part of the first public version.
+## [0.1.0] - 2026-07-28
+
+Initial public release, validated on real hardware (NanoKVM Beta, firmware
+2.4.3): full read/write loop over MCP at ~8.4 MB RSS.
 
 ### Added
 
