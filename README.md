@@ -182,32 +182,63 @@ tunnel/port-forward — see [Security](#security-model) for why the LAN address 
 discouraged) and `<token>` with the value of `NANOKVM_MCP_TOKEN`, or the token printed to
 `/data/nanokvm-mcp/daemon.log` if you didn't set one.
 
-### Over an SSH tunnel
+### Claude Code over an SSH tunnel (tested end-to-end)
 
-With the default loopback bind, forward the port from your machine (the keepalive matters
-— an idle MCP session will otherwise drop the tunnel):
+This is the setup validated against real hardware. It uses an SSH master
+connection that carries the port-forward and authenticates once; every later
+`ssh`/`scp` rides the same socket without re-prompting. (The hourly lapse makes
+this a per-session flow, not a permanent one — a durable path is tracked in
+[#16](https://github.com/tylervick/nanokvm-mcp/issues/16).)
+
+**1. Open the master connection + tunnel** (one password prompt):
 
 ```sh
-ssh -N -L 8080:127.0.0.1:8080 -o ServerAliveInterval=30 root@<device>
+ssh -f -N -M -S /tmp/nkvm.sock -o ControlPersist=3600 -o ServerAliveInterval=30 \
+  -o PubkeyAuthentication=no -o PreferredAuthentications=password -o IdentitiesOnly=yes \
+  -L 8080:127.0.0.1:8080 root@<device>
 ```
 
-Then the endpoint is `http://127.0.0.1:8080/` locally. Keep the token out of your
-shell history: export it once (`export NANOKVM_MCP_TOKEN=...` with a leading space,
-or `export NANOKVM_MCP_TOKEN=$(cat token-file)`) and reference the variable so the
-literal value never appears on a command line. Verify with MCP Inspector:
+The `PubkeyAuthentication=no` trio matters: the stock firmware has no authorized
+keys, and an ssh-agent holding several keys will exhaust dropbear's auth attempts
+before password auth is ever offered ("Too many authentication failures").
+
+Check whether the tunnel is still alive later (`ControlPersist=3600` = one hour):
+
+```sh
+ssh -S /tmp/nkvm.sock -O check root@<device>   # "Master running" = alive
+```
+
+**2. Pull the bearer token to a local file** — by reference from here on, so the
+secret never enters shell history or configs:
+
+```sh
+ssh -S /tmp/nkvm.sock root@<device> \
+  'sed -n "s/^NANOKVM_MCP_TOKEN=//p" /root/nanokvm-mcp/nanokvm-mcp.env' \
+  > ~/.nanokvm-token && chmod 600 ~/.nanokvm-token
+```
+
+**3. Register with Claude Code** — the single quotes are load-bearing: they pass
+the `${VAR}` reference through unexpanded, and Claude Code's `.mcp.json` expands
+it at connection time, so the saved config holds the reference, not the secret:
+
+```sh
+export NANOKVM_MCP_TOKEN=$(cat ~/.nanokvm-token)   # add to your shell profile
+claude mcp add --transport http nanokvm http://127.0.0.1:8080/ \
+  --header 'Authorization: Bearer ${NANOKVM_MCP_TOKEN}'
+```
+
+**4. Use it.** Start a *fresh* Claude Code session (new MCP servers are picked up
+at session start) from a shell where the variable is set, and ask for a
+screenshot or device info. In the default read-only mode the 7 read-only tools
+appear; mutating tools require `NANOKVM_MCP_READONLY=false` in the device env
+plus an init-script restart, after which they show up annotated as destructive —
+Claude asks before using them, and every call lands in the audit log.
+
+To sanity-check the endpoint without Claude, use MCP Inspector:
 
 ```sh
 npx @modelcontextprotocol/inspector --cli http://127.0.0.1:8080/ \
   --transport http --header "Authorization: Bearer ${NANOKVM_MCP_TOKEN}" --method tools/list
-```
-
-Or add it to Claude Code — single quotes matter: they pass the `${VAR}` reference
-through unexpanded, and Claude Code's `.mcp.json` expands it at connection time,
-so neither your shell history nor the saved config ever contains the secret:
-
-```sh
-claude mcp add --transport http nanokvm http://127.0.0.1:8080/ \
-  --header 'Authorization: Bearer ${NANOKVM_MCP_TOKEN}'
 ```
 
 ## Tools
