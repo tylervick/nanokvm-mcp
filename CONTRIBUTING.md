@@ -44,9 +44,11 @@ Annotated semver tags from a clean `main` checkout:
 ```sh
 git tag -a v0.1.0 -m "v0.1.0"
 git push origin v0.1.0
-mise run build   # binary reports v0.1.0 via git describe
 ```
 
-Update `CHANGELOG.md` (move `[Unreleased]` items under the new version) in the
-same commit that gets tagged, and attach `dist/nanokvm-mcp` to the GitHub
-release.
+The tag push triggers `.github/workflows/release.yml`, which runs GoReleaser
+to build the static riscv64 binary and publish the GitHub release with
+checksums — no manual artifact uploads. Update `CHANGELOG.md` (move
+`[Unreleased]` items under the new version) in the same commit that gets
+tagged. Dry-run locally with
+`mise x goreleaser -- goreleaser release --snapshot --clean`.
