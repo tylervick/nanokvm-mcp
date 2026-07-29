@@ -186,23 +186,28 @@ discouraged) and `<token>` with the value of `NANOKVM_MCP_TOKEN`, or the token p
 
 This is the setup validated against real hardware. It uses an SSH master
 connection that carries the port-forward and authenticates once; every later
-`ssh`/`scp` rides the same socket without re-prompting. (The hourly lapse makes
-this a per-session flow, not a permanent one — a durable path is tracked in
-[#16](https://github.com/tylervick/nanokvm-mcp/issues/16).)
+`ssh`/`scp` rides the same socket without re-prompting. (The master exits after
+an hour *idle*, so this is a per-session flow, not a permanent one — a durable
+path is tracked in [#16](https://github.com/tylervick/nanokvm-mcp/issues/16).)
 
 **1. Open the master connection + tunnel** (one password prompt):
 
 ```sh
 ssh -f -N -M -S /tmp/nkvm.sock -o ControlPersist=3600 -o ServerAliveInterval=30 \
+  -o ExitOnForwardFailure=yes \
   -o PubkeyAuthentication=no -o PreferredAuthentications=password -o IdentitiesOnly=yes \
   -L 8080:127.0.0.1:8080 root@<device>
 ```
+
+`ExitOnForwardFailure=yes` makes a failed port-forward (e.g. 8080 already taken
+by a stale tunnel) fail loudly here instead of backgrounding a broken master.
 
 The `PubkeyAuthentication=no` trio matters: the stock firmware has no authorized
 keys, and an ssh-agent holding several keys will exhaust dropbear's auth attempts
 before password auth is ever offered ("Too many authentication failures").
 
-Check whether the tunnel is still alive later (`ControlPersist=3600` = one hour):
+Check whether the tunnel is still alive later (`ControlPersist=3600` means the
+master exits after 3600 s with no client connections — active use keeps it open):
 
 ```sh
 ssh -S /tmp/nkvm.sock -O check root@<device>   # "Master running" = alive
@@ -212,10 +217,14 @@ ssh -S /tmp/nkvm.sock -O check root@<device>   # "Master running" = alive
 secret never enters shell history or configs:
 
 ```sh
-ssh -S /tmp/nkvm.sock root@<device> \
+(umask 077; ssh -S /tmp/nkvm.sock root@<device> \
   'sed -n "s/^NANOKVM_MCP_TOKEN=//p" /root/nanokvm-mcp/nanokvm-mcp.env' \
-  > ~/.nanokvm-token && chmod 600 ~/.nanokvm-token
+  > ~/.nanokvm-token) && test -s ~/.nanokvm-token || echo "no token in env file"
 ```
+
+The `test -s` guard catches the case where no explicit `NANOKVM_MCP_TOKEN` is
+set on the device (the generated-token path prints to `daemon.log` instead —
+but set an explicit one; see the [first-run checklist](#first-run-checklist-learned-on-real-hardware)).
 
 **3. Register with Claude Code** — the single quotes are load-bearing: they pass
 the `${VAR}` reference through unexpanded, and Claude Code's `.mcp.json` expands
@@ -240,6 +249,11 @@ To sanity-check the endpoint without Claude, use MCP Inspector:
 npx @modelcontextprotocol/inspector --cli http://127.0.0.1:8080/ \
   --transport http --header "Authorization: Bearer ${NANOKVM_MCP_TOKEN}" --method tools/list
 ```
+
+Note the shell expands the token into the process's arguments here (Inspector
+has no file-based header option), so it's briefly visible to `ps` — fine on a
+single-user machine, but on a shared host prefer checking with curl's `@file`
+header form instead.
 
 ## Tools
 
