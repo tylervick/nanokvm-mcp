@@ -1,5 +1,8 @@
 # nanokvm-mcp
 
+[![CI](https://github.com/tylervick/nanokvm-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/tylervick/nanokvm-mcp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/tylervick/nanokvm-mcp)](https://github.com/tylervick/nanokvm-mcp/releases)
+
 An [MCP](https://modelcontextprotocol.io) server for the [Sipeed NanoKVM](https://github.com/sipeed/NanoKVM),
 written in Go and running **on the device itself** as a standalone daemon alongside the
 stock firmware. It exposes screen capture, HID input (keyboard/mouse), power control, and
