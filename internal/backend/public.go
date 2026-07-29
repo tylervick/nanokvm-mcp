@@ -15,6 +15,7 @@ import (
 	"golang.org/x/image/draw"
 
 	"github.com/coder/websocket"
+
 	"github.com/tylervick/nanokvm-mcp/internal/hid"
 	"github.com/tylervick/nanokvm-mcp/internal/nanokvm"
 )

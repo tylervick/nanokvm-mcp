@@ -65,7 +65,7 @@ func run(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(cfg.AuditPath), 0o750); err != nil {
 		log.Printf("audit dir: %v (logging to stderr)", err)
 	}
-	var auditW = os.Stderr
+	auditW := os.Stderr
 	var auditFile *os.File
 	if f, err := os.OpenFile(cfg.AuditPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
 		auditW, auditFile = f, f
