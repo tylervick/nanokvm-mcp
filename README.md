@@ -57,17 +57,18 @@ show the commit hash instead.
 
 ### Releases
 
-Releases are plain annotated git tags — there is no separate release script:
+Releases are annotated git tags; pushing one triggers the release workflow,
+which runs [GoReleaser](https://goreleaser.com) to build the riscv64 binary and
+publish a GitHub release with the binary and checksums attached:
 
 ```sh
 git tag -a v0.1.0 -m "v0.1.0"
-git push origin v0.1.0
-mise run build   # dist/nanokvm-mcp now reports v0.1.0
+git push origin v0.1.0   # release workflow does the rest
 ```
 
-Tags follow [semver](https://semver.org) (`vMAJOR.MINOR.PATCH`). Tag from a clean
-checkout of `main` so the version doesn't carry a `-dirty` suffix, then attach
-`dist/nanokvm-mcp` to the GitHub release for users who don't cross-compile.
+Tags follow [semver](https://semver.org) (`vMAJOR.MINOR.PATCH`) and should be
+cut from a clean checkout of `main`. To test the release build locally without
+tagging: `mise x goreleaser -- goreleaser release --snapshot --clean`.
 
 ## Installing on a device
 

@@ -27,8 +27,9 @@ var version = "dev"
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := run(ctx); err != nil {
+	err := run(ctx)
+	stop()
+	if err != nil {
 		log.Fatal(err)
 	}
 }
