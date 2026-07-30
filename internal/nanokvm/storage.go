@@ -3,17 +3,28 @@ package nanokvm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
-func (c *Client) ListImages(ctx context.Context) ([]any, error) {
+// ListImages returns the disk image paths the firmware offers for mounting.
+//
+// Upstream answers with proto.GetImagesRsp, so the payload is {"files": [...]}
+// rather than a bare array. A payload we cannot read is an error here, not an
+// empty list: "this device has no images" is itself a valid answer, and the
+// caller has no way to tell the two apart otherwise.
+func (c *Client) ListImages(ctx context.Context) ([]string, error) {
 	raw, err := c.Do(ctx, http.MethodGet, "/api/storage/image", nil)
 	if err != nil {
 		return nil, err
 	}
-	var out []any
-	logUnmarshal("/api/storage/image", json.Unmarshal(raw, &out))
-	return out, nil
+	var rsp struct {
+		Files []string `json:"files"`
+	}
+	if err := json.Unmarshal(raw, &rsp); err != nil {
+		return nil, fmt.Errorf("nanokvm: /api/storage/image: unexpected data shape: %w", err)
+	}
+	return rsp.Files, nil
 }
 
 func (c *Client) MountImage(ctx context.Context, file string, cdrom bool) error {

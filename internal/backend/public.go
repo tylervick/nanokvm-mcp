@@ -8,7 +8,10 @@ import (
 	"image"
 	"image/jpeg"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"strings"
 	"time"
 
 	"golang.org/x/image/draw"
@@ -35,7 +38,7 @@ func (p *Public) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, err
 		return Shot{}, err
 	}
 	// Reconstruct the base URL via a request through the client's transport.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.kvm.BaseURL()+"/api/stream/mjpeg?n=1", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.kvm.BaseURL()+"/api/stream/mjpeg", nil)
 	if err != nil {
 		return Shot{}, err
 	}
@@ -49,11 +52,7 @@ func (p *Public) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, err
 		drainBody(resp.Body)
 		return Shot{}, fmt.Errorf("public screenshot: HTTP %d", resp.StatusCode)
 	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxFrameBytes))
-	if err != nil {
-		return Shot{}, err
-	}
-	jpegBytes, err := extractJPEG(raw)
+	jpegBytes, err := firstFrame(resp)
 	if err != nil {
 		return Shot{}, err
 	}
@@ -65,8 +64,8 @@ func (p *Public) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, err
 	}
 	needResize := (opts.Width > 0 && cfg.Width > opts.Width) || (opts.Height > 0 && cfg.Height > opts.Height)
 	if !needResize {
-		// Clone so the returned JPEG doesn't keep the whole up-to-8MB read
-		// buffer (raw) alive via a sub-slice reference.
+		// Clone so the returned JPEG doesn't pin the frame's whole read buffer
+		// alive via a sub-slice reference.
 		return Shot{JPEG: bytes.Clone(jpegBytes), Width: cfg.Width, Height: cfg.Height}, nil
 	}
 	if cfg.Width*cfg.Height > maxDecodePixels {
@@ -74,6 +73,39 @@ func (p *Public) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, err
 			cfg.Width, cfg.Height, maxDecodePixels)
 	}
 	return resizeJPEG(jpegBytes, opts)
+}
+
+// firstFrame returns one JPEG from the response and stops reading.
+//
+// /api/stream/mjpeg is a live capture, not a snapshot: upstream writes a
+// multipart part per frame and then blocks on the request context, so the body
+// has no EOF to read to. Draining it would stall until the byte cap and buffer
+// megabytes for a single screenshot, on a device with tens of megabytes free.
+// Taking the first part and closing the body hangs up on the capture instead.
+func firstFrame(resp *http.Response) ([]byte, error) {
+	mediaType, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err == nil && strings.HasPrefix(mediaType, "multipart/") && params["boundary"] != "" {
+		part, err := multipart.NewReader(resp.Body, params["boundary"]).NextPart()
+		if err != nil {
+			return nil, fmt.Errorf("public screenshot: read frame: %w", err)
+		}
+		// Deliberately not part.Close(): it drains the remainder of the part,
+		// which would spend the cap we just enforced on an oversized frame.
+		// The caller closes the response body, dropping the connection and the
+		// capture with it.
+		return readJPEG(part)
+	}
+	// Not a stream: a firmware variant answering with a plain image ends its
+	// body, so reading it whole is right there.
+	return readJPEG(resp.Body)
+}
+
+func readJPEG(r io.Reader) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, maxFrameBytes))
+	if err != nil {
+		return nil, err
+	}
+	return extractJPEG(raw)
 }
 
 func extractJPEG(buf []byte) ([]byte, error) {
