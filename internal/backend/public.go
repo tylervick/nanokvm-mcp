@@ -3,7 +3,6 @@ package backend
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -131,18 +130,28 @@ func sleepCtx(ctx context.Context, ms int) error {
 	}
 }
 
+// normToKVM maps a normalized [0,1] coordinate onto the absolute mouse axis.
+// The axis runs 0..32767, but the mapping starts at 1 so a normalized 0 stays
+// distinguishable from an unset field on the wire.
 func normToKVM(v float64) int {
 	k := int(v*0x7FFE) + 1
 	if k < 1 {
 		k = 1
 	}
-	if k > 0x7FFF {
-		k = 0x7FFF
+	if k > hid.MaxCoord {
+		k = hid.MaxCoord
 	}
 	return k
 }
 
-var mouseButton = map[string]int{"left": 0, "middle": 1, "right": 2, "": 0}
+// mouseButton maps the API's button names onto HID button bits. These are bits,
+// not indices: an unset button defaults to left, which is bit 0 and not 0.
+var mouseButton = map[string]byte{
+	"left":   hid.ButtonLeft,
+	"middle": hid.ButtonMiddle,
+	"right":  hid.ButtonRight,
+	"":       hid.ButtonLeft,
+}
 
 func (p *Public) Input(ctx context.Context, actions []Action) error {
 	if err := ValidateActions(actions); err != nil {
@@ -185,10 +194,20 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 	}
 	defer func() { _ = c.Close(websocket.StatusNormalClosure, "") }()
 
-	send := func(msg []int) error {
-		b, _ := json.Marshal(msg)
-		return c.Write(ctx, websocket.MessageText, b)
+	// Every message is a binary frame: one event byte, then a raw HID report.
+	// The firmware switches on that first byte and drops what it cannot place,
+	// silently — so a wrong encoding here reads as success all the way back to
+	// the MCP client while nothing reaches the target.
+	send := func(event byte, reports ...[]byte) error {
+		for _, r := range reports {
+			if err := c.Write(ctx, websocket.MessageBinary, hid.Frame(event, r)); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
+	mouse := func(reports ...[]byte) error { return send(hid.EventMouse, reports...) }
+	keyboard := func(reports ...[]byte) error { return send(hid.EventKeyboard, reports...) }
 
 	for _, a := range actions {
 		switch a.Action {
@@ -200,24 +219,37 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 			if a.X == nil || a.Y == nil {
 				return fmt.Errorf("move requires x and y")
 			}
-			if err := send([]int{2, 3, 0, normToKVM(*a.X), normToKVM(*a.Y)}); err != nil {
+			if err := mouse(hid.AbsoluteMouseReport(0, normToKVM(*a.X), normToKVM(*a.Y), 0)); err != nil {
 				return err
 			}
 		case "click":
 			btn := mouseButton[a.Button]
 			if a.X != nil && a.Y != nil {
-				if err := send([]int{2, 3, 0, normToKVM(*a.X), normToKVM(*a.Y)}); err != nil {
+				// The absolute report carries the position alongside the
+				// buttons, so the press and the release each name the point the
+				// move went to.
+				x, y := normToKVM(*a.X), normToKVM(*a.Y)
+				if err := mouse(
+					hid.AbsoluteMouseReport(0, x, y, 0),
+					hid.AbsoluteMouseReport(btn, x, y, 0),
+					hid.AbsoluteMouseReport(0, x, y, 0),
+				); err != nil {
 					return err
 				}
+				break
 			}
-			if err := send([]int{2, 1, btn, 0, 0}); err != nil { // down
-				return err
-			}
-			if err := send([]int{2, 2, 0, 0, 0}); err != nil { // up
+			// No position given. The relative report has no position field, so
+			// it presses wherever the cursor already is; an absolute report
+			// would have to name a coordinate and would jump there first.
+			if err := mouse(
+				hid.RelativeMouseReport(btn, 0, 0, 0),
+				hid.RelativeMouseReport(0, 0, 0, 0),
+			); err != nil {
 				return err
 			}
 		case "scroll":
-			if err := send([]int{2, 4, 0, 0, a.Amount}); err != nil {
+			// Relative, so the wheel turns without moving the pointer.
+			if err := mouse(hid.RelativeMouseReport(0, 0, 0, a.Amount)); err != nil {
 				return err
 			}
 		case "type":
@@ -226,40 +258,35 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 				if !ok {
 					continue
 				}
-				sh := 0
+				var mod byte
 				if shift {
-					sh = 2
+					mod = hid.ModShift
 				}
-				if err := send([]int{1, int(code), 0, sh, 0, 0}); err != nil {
-					return err
-				}
-				if err := send([]int{1, 0, 0, 0, 0, 0}); err != nil {
+				if err := keyboard(hid.KeyboardReport(mod, code), hid.KeyboardRelease()); err != nil {
 					return err
 				}
 			}
 		case "hotkey":
-			var mod int
-			var last byte
+			// One bitmap byte for the modifiers, then the single non-modifier
+			// key the tool contract allows.
+			var mod, last byte
 			for _, k := range a.Keys {
 				switch k {
 				case "ctrl":
-					mod |= 1
+					mod |= hid.ModCtrl
 				case "shift":
-					mod |= 2
+					mod |= hid.ModShift
 				case "alt":
-					mod |= 4
+					mod |= hid.ModAlt
 				case "meta", "cmd", "win", "super":
-					mod |= 8
+					mod |= hid.ModMeta
 				default:
 					if code, ok := hid.Code(k); ok {
 						last = code
 					}
 				}
 			}
-			if err := send([]int{1, int(last), mod & 1, (mod >> 1) & 1, (mod >> 2) & 1, (mod >> 3) & 1}); err != nil {
-				return err
-			}
-			if err := send([]int{1, 0, 0, 0, 0, 0}); err != nil {
+			if err := keyboard(hid.KeyboardReport(mod, last), hid.KeyboardRelease()); err != nil {
 				return err
 			}
 		case "drag":
@@ -268,16 +295,19 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 				a.To.X == nil || a.To.Y == nil {
 				return fmt.Errorf("drag requires from and to")
 			}
-			if err := send([]int{2, 3, 0, normToKVM(*a.From.X), normToKVM(*a.From.Y)}); err != nil {
-				return err
-			}
-			if err := send([]int{2, 1, 0, 0, 0}); err != nil {
-				return err
-			}
-			if err := send([]int{2, 3, 0, normToKVM(*a.To.X), normToKVM(*a.To.Y)}); err != nil {
-				return err
-			}
-			if err := send([]int{2, 2, 0, 0, 0}); err != nil {
+			// The whole drag stays on the absolute report. The firmware releases
+			// the relative mouse the moment an absolute report arrives (and vice
+			// versa), so a drag that pressed on one device and travelled on the
+			// other would drop the button at the start point.
+			btn := mouseButton[a.Button]
+			fx, fy := normToKVM(*a.From.X), normToKVM(*a.From.Y)
+			tx, ty := normToKVM(*a.To.X), normToKVM(*a.To.Y)
+			if err := mouse(
+				hid.AbsoluteMouseReport(0, fx, fy, 0),
+				hid.AbsoluteMouseReport(btn, fx, fy, 0),
+				hid.AbsoluteMouseReport(btn, tx, ty, 0),
+				hid.AbsoluteMouseReport(0, tx, ty, 0),
+			); err != nil {
 				return err
 			}
 		}
