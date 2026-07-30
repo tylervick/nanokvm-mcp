@@ -130,7 +130,7 @@ upstream code carry a header noting origin.
 Laptop — Claude Code / Claude Desktop
    │
    │  MCP streamable HTTP + bearer token
-   │  (over Tailscale tailnet, recommended)
+   │  (over an SSH port-forward to loopback)
    ▼
 NanoKVM device (riscv64 / SG2002)
 ┌─────────────────────────────────────────────┐
@@ -253,6 +253,16 @@ independently of tool annotations. This is transport security, not a guardrail.
 - The README documents Tailscale as the recommended exposure path. The stock firmware
   already supports installing it, so putting this on a tailnet instead of the LAN is the
   largest available security win and costs nothing.
+
+  **Corrected 2026-07-30 (#16).** The security reasoning holds — the LAN is the wrong
+  place for this listener — but "costs nothing" was wrong, and the recommendation has
+  changed to an SSH port-forward to the loopback bind. `tailscaled` on this hardware
+  settles around 40 MB resident ([sipeed/NanoKVM#366](https://github.com/sipeed/NanoKVM/issues/366))
+  against the 43 MB available measured in Device recon above, and roughly 86% of that
+  heap is wireguard-go per-interface buffer pools rather than collectable garbage
+  ([tailscale/tailscale#16258](https://github.com/tailscale/tailscale/issues/16258)), so
+  `GOMEMLIMIT` does not recover it. Off-LAN reach, when it is needed, belongs on a
+  subnet router on another host — not on the device.
 
 ## Guardrails
 
@@ -415,4 +425,4 @@ that case is documented, not solved.
 | Memory pressure on a thin ~18 MB headroom (43 MB available) | Measured 8.1 MB idle, 7.1 MB binary. `GOMEMLIMIT` in the init script; picoclaw path never decodes JPEG; `publicBackend` hard-caps resolution to keep decode under budget; enforced in CI and the device smoke test |
 | `publicBackend` screenshot spikes memory (no scaled decode in Go's `image/jpeg`) | Resolution cap plus `debug.FreeOSMemory()`; documented as a degraded path, and the reason picoclaw is preferred |
 | Session-lock contention with PicoClaw | Detected and surfaced as a clear tool error rather than a hang |
-| Network-exposed keystroke injection | Loopback default bind, bearer auth, read-only mode, audit log, Tailscale guidance |
+| Network-exposed keystroke injection | Loopback default bind, bearer auth, read-only mode, audit log, SSH port-forward guidance |

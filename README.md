@@ -154,12 +154,31 @@ authenticates every request independently of anything the MCP client does:
   and a truncated hash, not the content. Set `NANOKVM_MCP_AUDIT_FULL=true` to log full
   text instead (useful for debugging, but keep the log file access-restricted if you do).
 
-**Do not expose `NANOKVM_MCP_BIND` directly to the LAN or the internet.** If you need to
-reach the sidecar from another machine, put it on a [Tailscale](https://tailscale.com)
-tailnet instead — the stock NanoKVM firmware already supports installing Tailscale, so
-this costs nothing and is the recommended exposure path. Bind the sidecar to the
-tailscale interface address (or leave it on loopback and use `tailscale serve`/a local
-SSH tunnel) rather than to `0.0.0.0`.
+**Do not expose `NANOKVM_MCP_BIND` directly to the LAN or the internet.** To reach the
+sidecar from another machine, leave the bind on loopback and forward a local port over
+SSH — see [Durable access](#durable-access-a-launchd-supervised-tunnel). That keeps two
+independent layers in front of a keystroke injector: an SSH credential to reach the port
+at all, and the bearer token to use it.
+
+**A note on Tailscale, which this README previously recommended.** Putting the device on a
+tailnet is sound reasoning about *exposure* — the LAN is the wrong place for this listener
+— but running `tailscaled` **on the NanoKVM does not fit its memory budget**, and the
+earlier claim here that it "costs nothing" was wrong. On this hardware `tailscaled` settles
+around **40 MB resident** ([sipeed/NanoKVM#366](https://github.com/sipeed/NanoKVM/issues/366)),
+against the **43 MB available** this project measures on-device. Upstream reports it
+needing `GOMEMLIMIT=100`, `GOGC=50`, and a cron reboot every two days to stay up — and
+still being OOM-killed at 78 MB — on a board with *more* free RAM than ours
+([sipeed/NanoKVM#660](https://github.com/sipeed/NanoKVM/issues/660)). Tuning does not
+recover it: roughly 86% of that heap is wireguard-go per-interface buffer pools, an
+allocation floor rather than collectable garbage
+([tailscale/tailscale#16258](https://github.com/tailscale/tailscale/issues/16258)). An OOM
+here is not graceful — the kernel takes the largest resident process, which may be the
+firmware's own video pipeline, so the KVM function dies along with your way back in.
+
+If you later need to reach the device from outside the LAN, run the Tailscale **subnet
+router on another always-on host** on that LAN rather than on the NanoKVM. The device
+spends no RAM, the tunnel below rides over the tailnet unchanged, and the MCP listener
+still never leaves loopback.
 
 ## Connecting an MCP client
 
@@ -170,7 +189,7 @@ Point your MCP client at the daemon's HTTP endpoint with the bearer token in the
 {
   "mcpServers": {
     "nanokvm": {
-      "url": "http://<device>:8080/",
+      "url": "http://127.0.0.1:8080/",
       "headers": {
         "Authorization": "Bearer ${NANOKVM_MCP_TOKEN}"
       }
@@ -179,18 +198,20 @@ Point your MCP client at the daemon's HTTP endpoint with the bearer token in the
 }
 ```
 
-Replace `<device>` with the NanoKVM's Tailscale address (or `127.0.0.1` plus an SSH
-tunnel/port-forward — see [Security](#security-model) for why the LAN address is
-discouraged) and `<token>` with the value of `NANOKVM_MCP_TOKEN`, or the token printed to
-`/data/nanokvm-mcp/daemon.log` if you didn't set one.
+The URL is `127.0.0.1` because the sidecar stays bound to loopback and you reach it
+through an SSH port-forward — see [Security](#security-model) for why the LAN address is
+discouraged, and [Durable access](#durable-access-a-launchd-supervised-tunnel) for a
+forward that survives reboots. `NANOKVM_MCP_TOKEN` holds the device's token, or the one
+printed to `/data/nanokvm-mcp/daemon.log` if you didn't set an explicit value.
 
 ### Claude Code over an SSH tunnel (tested end-to-end)
 
 This is the setup validated against real hardware. It uses an SSH master
 connection that carries the port-forward and authenticates once; every later
 `ssh`/`scp` rides the same socket without re-prompting. (The master exits after
-an hour *idle*, so this is a per-session flow, not a permanent one — a durable
-path is tracked in [#16](https://github.com/tylervick/nanokvm-mcp/issues/16).)
+an hour *idle*, so this is a per-session flow, not a permanent one — for
+day-to-day use, set up the supervised tunnel in
+[Durable access](#durable-access-a-launchd-supervised-tunnel) instead.)
 
 **1. Open the master connection + tunnel** (one password prompt):
 
@@ -256,6 +277,125 @@ Note the shell expands the token into the process's arguments here (Inspector
 has no file-based header option), so it's briefly visible to `ps` — fine on a
 single-user machine, but on a shared host prefer checking with curl's `@file`
 header form instead.
+
+### Durable access: a launchd-supervised tunnel
+
+The master-socket flow above authenticates once and lapses after an hour idle —
+right for a working session, wrong for day-to-day. For a forward that comes back
+on its own after a network drop, a device reboot, or a laptop wake, hand a plain
+tunnel to launchd.
+
+This changes nothing in the [security model](#security-model): the sidecar stays
+bound to `127.0.0.1`, and reaching it still costs an SSH credential *plus* the
+bearer token. What changes is only who restarts the tunnel.
+
+This is a LAN-scoped path — it needs the client to reach the device's SSH port.
+See [Security](#security-model) for the off-LAN extension.
+
+**1. Install a key on the device.** An unattended reconnect can't answer a
+password prompt, and the stock firmware ships no authorized keys. Check what the
+device's dropbear supports first — ed25519 needs dropbear 2020.79 or newer:
+
+```sh
+ssh -v root@<device> exit 2>&1 | grep 'remote software version'
+```
+
+Generate a dedicated key (use `-t rsa -b 3072` instead if that banner is older)
+and append it, paying the password prompt one last time:
+
+```sh
+ssh-keygen -t ed25519 -f ~/.ssh/nanokvm -C nanokvm-mcp -N ''
+ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password root@<device> \
+  'mkdir -p /root/.ssh && chmod 700 /root/.ssh && cat >> /root/.ssh/authorized_keys \
+   && chmod 600 /root/.ssh/authorized_keys' < ~/.ssh/nanokvm.pub
+```
+
+Some dropbear builds read `/etc/dropbear/authorized_keys` instead. Verify before
+going further — a launchd job that can't authenticate just respawns forever:
+
+```sh
+ssh -i ~/.ssh/nanokvm -o IdentitiesOnly=yes root@<device> true && echo "key auth OK"
+```
+
+With a key in place, `-i ~/.ssh/nanokvm -o IdentitiesOnly=yes` *replaces* the
+`PubkeyAuthentication=no` trio above rather than adding to it: dropbear is offered
+exactly one key, so there is no agent flood to work around.
+
+The key survives firmware *app* updates (they touch only `/kvmapp`, `/root/old`,
+and `/root/.kvmcache`) but not a rootfs reflash — redo this step after one.
+
+**2. Connect once interactively, then clear any ad-hoc master.** The first
+connection pins the device's host key in `known_hosts`; the launchd job runs with
+`StrictHostKeyChecking` at its default and will refuse an unknown host rather than
+trust it blindly. Then release port 8080, or the supervised tunnel will fail its
+forward and respawn in a loop:
+
+```sh
+ssh -S /tmp/nkvm.sock -O exit root@<device> 2>/dev/null
+```
+
+**3. Write the agent** to `~/Library/LaunchAgents/com.nanokvm.tunnel.plist`.
+`ProgramArguments` gets no shell expansion, so spell out your home directory and
+the device address in full — `~` and `$HOME` will not work:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nanokvm.tunnel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/ssh</string>
+    <string>-N</string>
+    <string>-i</string>              <string>/Users/<you>/.ssh/nanokvm</string>
+    <string>-o</string>              <string>IdentitiesOnly=yes</string>
+    <string>-o</string>              <string>ControlMaster=no</string>
+    <string>-o</string>              <string>ExitOnForwardFailure=yes</string>
+    <string>-o</string>              <string>ServerAliveInterval=30</string>
+    <string>-o</string>              <string>ServerAliveCountMax=3</string>
+    <string>-L</string>              <string>8080:127.0.0.1:8080</string>
+    <string>root@<device></string>
+  </array>
+  <key>RunAtLoad</key>          <true/>
+  <key>KeepAlive</key>          <true/>
+  <key>ThrottleInterval</key>   <integer>10</integer>
+  <key>StandardErrorPath</key>  <string>/tmp/nanokvm-tunnel.log</string>
+</dict>
+</plist>
+```
+
+Three details there are load-bearing, and each maps to a way this fails silently:
+
+- **No `-f`.** launchd supervises a *foreground* process. A self-backgrounding
+  `ssh` looks like an instant exit and gets respawned forever.
+- **`ControlMaster=no`.** If your `~/.ssh/config` sets `ControlMaster auto`, the
+  job would hand its forward to an existing master and exit immediately — the same
+  respawn loop, and a tunnel that dies whenever that master does.
+- **`ExitOnForwardFailure=yes` with `ServerAliveInterval`/`ServerAliveCountMax`.**
+  Together these make `ssh` exit within ~90 s of the link going away instead of
+  holding a dead forward open. launchd can only restart something that exits.
+
+**4. Load it and confirm:**
+
+```sh
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nanokvm.tunnel.plist
+launchctl print gui/$(id -u)/com.nanokvm.tunnel | grep -E 'state|pid'
+nc -z 127.0.0.1 8080 && echo "tunnel up"
+```
+
+`nc -z` confirms the forward; to check the MCP endpoint end-to-end, use the MCP
+Inspector command above. To stop it, or to reload after editing the plist:
+
+```sh
+launchctl bootout gui/$(id -u)/com.nanokvm.tunnel
+```
+
+With the tunnel supervised, the `claude mcp add` registration from step 3 above
+needs no changes — it already points at `127.0.0.1:8080`, and now that address
+answers without a manual re-auth first.
 
 ## Tools
 
