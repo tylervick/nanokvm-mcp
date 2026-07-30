@@ -201,9 +201,10 @@ func TestToolHandlers(t *testing.T) {
 			wantJSON: []string{`"enabled":true`, `"width":1920`},
 		},
 		{
-			name:     "list_images wraps firmware list",
-			tool:     "nanokvm_list_images",
-			serve:    map[string]any{"/api/storage/image": []string{"debian.iso", "ubuntu.iso"}},
+			name: "list_images unwraps the firmware's files envelope",
+			tool: "nanokvm_list_images",
+			// proto.GetImagesRsp: the payload is {"files": [...]}, not a bare array.
+			serve:    map[string]any{"/api/storage/image": map[string]any{"files": []string{"debian.iso", "ubuntu.iso"}}},
 			wantReqs: []fakeReq{{Method: "GET", Path: "/api/storage/image"}},
 			wantJSON: []string{`"images":["debian.iso","ubuntu.iso"]`},
 		},
