@@ -282,6 +282,49 @@ All tools carry MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentH
 client can distinguish, for example, reading the power LED from force-shutting-down the
 target.
 
+For a walkthrough of a real session against hardware — including `tools/list` returning 14
+tools normally and 7 in read-only mode — see [`docs/demo.md`](docs/demo.md).
+
+### The power LED can read `false` while the target is running
+
+On the board this was tested on (NanoKVM **Beta**, firmware 2.4.3), `nanokvm_led_status`
+returned `pwr: false` while `nanokvm_screenshot` showed the target sitting at a Proxmox VE
+console login prompt — plainly powered on.
+
+**Treat a screenshot, not `nanokvm_led_status`, as ground truth for target power state.**
+
+This is one observation on one board, not a general claim about all NanoKVM hardware.
+**To check your own:** call `nanokvm_led_status` and `nanokvm_screenshot` back to back with
+the target running. If `pwr` is `false` while the screen shows a live machine, the power-LED
+sense path on your setup isn't reporting, and you should not automate against it. The stock
+web UI's power icon reads the same GPIO, so it is an equivalent check.
+
+Why the daemon cannot detect this for you: upstream reads the power LED from a single GPIO
+(`/sys/class/gpio/gpio504/value`) and reports `pwr` as active-low — `value == 0` is `true` —
+with no separate signal for "this line isn't connected"
+([`server/service/vm/gpio.go`](https://github.com/sipeed/NanoKVM/blob/main/server/service/vm/gpio.go)).
+A disconnected sense line and a powered-off target produce the same `false`.
+
+Upstream does **not** document this as a board-version limitation, and its config points the
+other way: the same `gpio504` power-LED path is configured for all three hardware versions —
+Alpha, Beta, and PCIe
+([`server/config/hardware.go`](https://github.com/sipeed/NanoKVM/blob/main/server/config/hardware.go)) —
+so power-LED sensing is *expected* to work on Beta. Reading it requires the KVM-B / ATX board
+wired to the host's 9-pin front-panel header (the Full version ships KVM-B; Lite does not),
+and the PLED lead is polarized. A missing KVM-B, or an unconnected or reversed PLED lead,
+would produce the reading observed here. Sipeed issue
+[#241](https://github.com/sipeed/NanoKVM/issues/241) reports non-working PWR and HDD LEDs on a
+Full version *with* the ATX daughterboard attached, and has no maintainer response — so the
+root cause is not settled upstream. No schematic confirming the per-board sense wiring was
+found.
+
+The **HDD LED is a separate and documented case.** `hdd` is meaningful only on Alpha
+hardware: upstream leaves `GPIOHDDLed` empty on Beta/PCIe and hardcodes `hdd = false` there,
+and its user guide notes that on the Full version's ATX board "only the power, reset buttons,
+and power light are exposed, so it is normal for the HDD LED to not light up." This daemon
+surfaces that as `hdd_available: false` (`internal/nanokvm/vm.go`). **When `hdd_available` is
+`false`, ignore `hdd` — it is not a reading.**
+
 ### Capture lags input by about one frame
 
 On real hardware (firmware 2.4.3) the video capture pipeline trails HID input by roughly one
