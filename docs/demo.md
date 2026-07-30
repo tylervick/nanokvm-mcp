@@ -6,8 +6,9 @@ original session miscounted — otherwise it is what happened.
 
 **Setup:** NanoKVM Beta, firmware 2.4.3. Target machine is a Proxmox VE host. The daemon
 runs on the device and is reached over an SSH tunnel at `127.0.0.1:8080`; the client is
-Claude Code. The daemon was started in its default **read-only** mode
-(`NANOKVM_MCP_READONLY` unset or `true`).
+Claude Code. The daemon was started in **read-only** mode, which requires setting
+`NANOKVM_MCP_READONLY=true` explicitly — it is *not* the default. Unset or `false` (the
+shipped default, `internal/config/config.go:76`) registers all 14 tools.
 
 The point of this page is the second step: read-only mode is *enforced by construction*,
 not by convention. The mutating tools are never registered, so they never appear in
@@ -157,12 +158,12 @@ and sending an Escape/Ctrl-U to flush the line.
 ## Reproducing this
 
 ```sh
-# Read-only (default): tools/list returns 7
+# With NANOKVM_MCP_READONLY=true in nanokvm-mcp.env, restarted: tools/list returns 7
 npx @modelcontextprotocol/inspector --cli http://127.0.0.1:8080/ \
   --transport http --header "Authorization: Bearer ${NANOKVM_MCP_TOKEN}" \
   --method tools/list | grep -c '"name"'
 
-# With NANOKVM_MCP_READONLY=false in nanokvm-mcp.env and the init script restarted: 14
+# Unset or false (the shipped default), restarted: 14
 ```
 
 See the [README](../README.md) for setup, configuration, and the security model.
