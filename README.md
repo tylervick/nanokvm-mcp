@@ -301,21 +301,54 @@ ssh -v root@<device> exit 2>&1 | grep 'remote software version'
 ```
 
 Generate a dedicated key (use `-t rsa -b 3072` instead if that banner is older)
-and append it, paying the password prompt one last time:
+and append it, paying the password prompt one last time. The `restrict` prefix
+confines the key to what the tunnel actually needs:
 
 ```sh
 ssh-keygen -t ed25519 -f ~/.ssh/nanokvm -C nanokvm-mcp -N ''
+{ printf 'restrict,no-pty,command="/bin/false" '; cat ~/.ssh/nanokvm.pub; } | \
 ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password root@<device> \
   'mkdir -p /root/.ssh && chmod 700 /root/.ssh && cat >> /root/.ssh/authorized_keys \
-   && chmod 600 /root/.ssh/authorized_keys' < ~/.ssh/nanokvm.pub
+   && chmod 600 /root/.ssh/authorized_keys'
 ```
+
+**Understand what this key is before you install it.** `-N ''` gives it no
+passphrase, because launchd has no one to ask for one — so `~/.ssh/nanokvm` is a
+plaintext credential at rest, and whoever reads that file gets whatever the key
+grants. Left unrestricted, that is a root shell on the device, not merely the
+port-forward. Three things reduce the blast radius, in descending order of how
+much they buy you:
+
+- **The `restrict,no-pty,command="/bin/false"` prefix above.** `restrict` denies
+  everything and re-enables nothing; `command="/bin/false"` forces a dead command
+  for any shell or exec request. `ssh -N` asks for neither, so the forward still
+  works while interactive use of the key does not. Dropbear parses `restrict` only
+  on newer builds — if yours ignores it the key still works, just unrestricted, and
+  if it rejects the line outright password auth still gets you in. Neither case
+  locks you out, but check which you got (below) rather than assuming.
+- **Keep it out of your agent.** Don't `ssh-add` this key. The plist references it
+  by path, so the agent never needs it, and staying out of the agent is also what
+  keeps the dropbear auth-attempt flood from coming back.
+- **A passphrase plus a keychain-backed agent** (`ssh-add --apple-use-keychain`) is
+  strictly safer at rest, but it defeats the point here: the whole reason for this
+  section is a tunnel that reconnects with nobody logged in. If your threat model
+  wants the passphrase, keep the per-session master-socket flow above instead and
+  accept the hourly re-auth.
 
 Some dropbear builds read `/etc/dropbear/authorized_keys` instead. Verify before
-going further — a launchd job that can't authenticate just respawns forever:
+going further — a launchd job that can't authenticate just respawns forever. Test
+the forward rather than a shell, since the forced command denies the latter by
+design:
 
 ```sh
-ssh -i ~/.ssh/nanokvm -o IdentitiesOnly=yes root@<device> true && echo "key auth OK"
+ssh -i ~/.ssh/nanokvm -o IdentitiesOnly=yes -f -N -L 18080:127.0.0.1:8080 root@<device> \
+  && nc -z 127.0.0.1 18080 && echo "key auth + forwarding OK"
 ```
+
+If that prints nothing, retry with `-v` and look for `Authentication succeeded`.
+Should a shell come back instead of the forced command failing, the restriction
+options were ignored — the key works but is unrestricted, so treat `~/.ssh/nanokvm`
+accordingly. Clean up the test forward when done (`pkill -f 18080:127.0.0.1:8080`).
 
 With a key in place, `-i ~/.ssh/nanokvm -o IdentitiesOnly=yes` *replaces* the
 `PubkeyAuthentication=no` trio above rather than adding to it: dropbear is offered
@@ -336,7 +369,10 @@ ssh -S /tmp/nkvm.sock -O exit root@<device> 2>/dev/null
 
 **3. Write the agent** to `~/Library/LaunchAgents/com.nanokvm.tunnel.plist`.
 `ProgramArguments` gets no shell expansion, so spell out your home directory and
-the device address in full — `~` and `$HOME` will not work:
+the device address in full — `~` and `$HOME` will not work. Replace
+`YOUR-USER` and `DEVICE-ADDRESS` before loading it; unlike the shell snippets
+elsewhere in this README, the placeholders here can't use angle brackets, which
+XML would read as tags:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -350,14 +386,16 @@ the device address in full — `~` and `$HOME` will not work:
   <array>
     <string>/usr/bin/ssh</string>
     <string>-N</string>
-    <string>-i</string>              <string>/Users/<you>/.ssh/nanokvm</string>
+    <string>-i</string>              <string>/Users/YOUR-USER/.ssh/nanokvm</string>
     <string>-o</string>              <string>IdentitiesOnly=yes</string>
+    <string>-o</string>              <string>ControlPath=none</string>
     <string>-o</string>              <string>ControlMaster=no</string>
     <string>-o</string>              <string>ExitOnForwardFailure=yes</string>
+    <string>-o</string>              <string>ConnectTimeout=10</string>
     <string>-o</string>              <string>ServerAliveInterval=30</string>
     <string>-o</string>              <string>ServerAliveCountMax=3</string>
     <string>-L</string>              <string>8080:127.0.0.1:8080</string>
-    <string>root@<device></string>
+    <string>root@DEVICE-ADDRESS</string>
   </array>
   <key>RunAtLoad</key>          <true/>
   <key>KeepAlive</key>          <true/>
@@ -367,16 +405,24 @@ the device address in full — `~` and `$HOME` will not work:
 </plist>
 ```
 
-Three details there are load-bearing, and each maps to a way this fails silently:
+Four details there are load-bearing, and each maps to a way this fails silently:
 
 - **No `-f`.** launchd supervises a *foreground* process. A self-backgrounding
   `ssh` looks like an instant exit and gets respawned forever.
-- **`ControlMaster=no`.** If your `~/.ssh/config` sets `ControlMaster auto`, the
-  job would hand its forward to an existing master and exit immediately — the same
-  respawn loop, and a tunnel that dies whenever that master does.
+- **`ControlPath=none`, not just `ControlMaster=no`.** These are not the same
+  switch, and getting it wrong is the subtle one. Per `ssh_config(5)`,
+  `ControlMaster=no` is the *default* and is precisely the value that lets a
+  session **join** an existing master — it governs whether this `ssh` becomes a
+  master, not whether it reuses one. Only `ControlPath=none` disables sharing. If
+  your `~/.ssh/config` sets a `ControlPath`, the job would otherwise hand its
+  forward to that master and exit immediately, giving you a respawn loop and a
+  tunnel that dies whenever the master does.
 - **`ExitOnForwardFailure=yes` with `ServerAliveInterval`/`ServerAliveCountMax`.**
   Together these make `ssh` exit within ~90 s of the link going away instead of
   holding a dead forward open. launchd can only restart something that exits.
+- **`ConnectTimeout=10`.** Without it a connect to a sleeping or absent device sits
+  in the system TCP timeout for over a minute before launchd gets its exit code,
+  which stretches every reconnect attempt for no benefit on a LAN.
 
 **4. Load it and confirm:**
 

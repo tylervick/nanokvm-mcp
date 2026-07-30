@@ -246,13 +246,18 @@ On-device means no stdio, so the endpoint is network-reachable and **must** auth
 independently of tool annotations. This is transport security, not a guardrail.
 
 - Streamable HTTP via the official `modelcontextprotocol/go-sdk` (v1.6.1)
-- Bearer token from `/etc/kvm/.nanokvm_mcp_token`, mode 0600, generated on first run
+- ~~Bearer token from `/etc/kvm/.nanokvm_mcp_token`, mode 0600, generated on first run~~
+  **Corrected 2026-07-30 (#16):** as built, the token comes from the `NANOKVM_MCP_TOKEN`
+  environment variable (`internal/config/config.go`), which the init script sources from
+  `/root/nanokvm-mcp/nanokvm-mcp.env`; if unset, one is generated per start and logged to
+  `/data/nanokvm-mcp/daemon.log`. No `/etc/kvm/.nanokvm_mcp_token` is ever read — the only
+  `/etc/kvm` token this project touches is the firmware's `.picoclaw_internal_token`.
 - Constant-time comparison; non-bearer requests get 401
 - **Default bind `127.0.0.1:8080`.** Exposing it requires explicit configuration. A
   keystroke injector should not become LAN-reachable by default.
-- The README documents Tailscale as the recommended exposure path. The stock firmware
+- ~~The README documents Tailscale as the recommended exposure path. The stock firmware
   already supports installing it, so putting this on a tailnet instead of the LAN is the
-  largest available security win and costs nothing.
+  largest available security win and costs nothing.~~ **Superseded — see below.**
 
   **Corrected 2026-07-30 (#16).** The security reasoning holds — the LAN is the wrong
   place for this listener — but "costs nothing" was wrong, and the recommendation has
