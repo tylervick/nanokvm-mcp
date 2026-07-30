@@ -130,7 +130,7 @@ upstream code carry a header noting origin.
 Laptop — Claude Code / Claude Desktop
    │
    │  MCP streamable HTTP + bearer token
-   │  (over Tailscale tailnet, recommended)
+   │  (over an SSH port-forward to loopback)
    ▼
 NanoKVM device (riscv64 / SG2002)
 ┌─────────────────────────────────────────────┐
@@ -246,13 +246,28 @@ On-device means no stdio, so the endpoint is network-reachable and **must** auth
 independently of tool annotations. This is transport security, not a guardrail.
 
 - Streamable HTTP via the official `modelcontextprotocol/go-sdk` (v1.6.1)
-- Bearer token from `/etc/kvm/.nanokvm_mcp_token`, mode 0600, generated on first run
+- ~~Bearer token from `/etc/kvm/.nanokvm_mcp_token`, mode 0600, generated on first run~~
+  **Corrected 2026-07-30 (#16):** as built, the token comes from the `NANOKVM_MCP_TOKEN`
+  environment variable (`internal/config/config.go`), which the init script sources from
+  `/root/nanokvm-mcp/nanokvm-mcp.env`; if unset, one is generated per start and logged to
+  `/data/nanokvm-mcp/daemon.log`. No `/etc/kvm/.nanokvm_mcp_token` is ever read — the only
+  `/etc/kvm` token this project touches is the firmware's `.picoclaw_internal_token`.
 - Constant-time comparison; non-bearer requests get 401
 - **Default bind `127.0.0.1:8080`.** Exposing it requires explicit configuration. A
   keystroke injector should not become LAN-reachable by default.
-- The README documents Tailscale as the recommended exposure path. The stock firmware
+- ~~The README documents Tailscale as the recommended exposure path. The stock firmware
   already supports installing it, so putting this on a tailnet instead of the LAN is the
-  largest available security win and costs nothing.
+  largest available security win and costs nothing.~~ **Superseded — see below.**
+
+  **Corrected 2026-07-30 (#16).** The security reasoning holds — the LAN is the wrong
+  place for this listener — but "costs nothing" was wrong, and the recommendation has
+  changed to an SSH port-forward to the loopback bind. `tailscaled` on this hardware
+  settles around 40 MB resident ([sipeed/NanoKVM#366](https://github.com/sipeed/NanoKVM/issues/366))
+  against the 43 MB available measured in Device recon above, and roughly 86% of that
+  heap is wireguard-go per-interface buffer pools rather than collectable garbage
+  ([tailscale/tailscale#16258](https://github.com/tailscale/tailscale/issues/16258)), so
+  `GOMEMLIMIT` does not recover it. Off-LAN reach, when it is needed, belongs on a
+  subnet router on another host — not on the device.
 
 ## Guardrails
 
@@ -415,4 +430,4 @@ that case is documented, not solved.
 | Memory pressure on a thin ~18 MB headroom (43 MB available) | Measured 8.1 MB idle, 7.1 MB binary. `GOMEMLIMIT` in the init script; picoclaw path never decodes JPEG; `publicBackend` hard-caps resolution to keep decode under budget; enforced in CI and the device smoke test |
 | `publicBackend` screenshot spikes memory (no scaled decode in Go's `image/jpeg`) | Resolution cap plus `debug.FreeOSMemory()`; documented as a degraded path, and the reason picoclaw is preferred |
 | Session-lock contention with PicoClaw | Detected and surfaced as a clear tool error rather than a hang |
-| Network-exposed keystroke injection | Loopback default bind, bearer auth, read-only mode, audit log, Tailscale guidance |
+| Network-exposed keystroke injection | Loopback default bind, bearer auth, read-only mode, audit log, SSH port-forward guidance |
