@@ -397,6 +397,146 @@ With the tunnel supervised, the `claude mcp add` registration from step 3 above
 needs no changes — it already points at `127.0.0.1:8080`, and now that address
 answers without a manual re-auth first.
 
+### Claude Desktop
+
+Claude Desktop cannot reach this daemon directly. Its config file registers
+**stdio** servers only — there is no `url`/`headers` form — and the Connectors UI
+offers OAuth alone for custom remote servers, with no bearer-token or custom-header
+field ([anthropics/claude-ai-mcp#112](https://github.com/anthropics/claude-ai-mcp/issues/112),
+closed as not planned). Bridge the HTTP endpoint to stdio with
+[`mcp-remote`](https://github.com/geelen/mcp-remote).
+
+| Platform | Config file |
+|---|---|
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+
+Bring the [tunnel](#durable-access-a-launchd-supervised-tunnel) up first, then:
+
+```json
+{
+  "mcpServers": {
+    "nanokvm": {
+      "command": "/bin/sh",
+      "args": [
+        "-c",
+        "NANOKVM_MCP_TOKEN=$(cat ~/.nanokvm-token) exec /opt/homebrew/bin/npx -y mcp-remote http://127.0.0.1:8080/ --header 'Authorization: Bearer ${NANOKVM_MCP_TOKEN}'"
+      ]
+    }
+  }
+}
+```
+
+Quit and reopen Claude Desktop afterwards — closing the window does not reload
+MCP servers.
+
+Three details in that command matter:
+
+- **The single quotes are load-bearing** — same reason as the Claude Code flow
+  above, different consumer. They stop the shell expanding
+  `${NANOKVM_MCP_TOKEN}`, so the literal reference reaches `mcp-remote`, which
+  performs its own `${VAR}` substitution from its environment. The token is read
+  out of `~/.nanokvm-token` (mode 0600) at launch and never appears in the config
+  file. Claude Desktop's well-known refusal to expand `${VAR}` in `args` is
+  therefore harmless here — passing it through untouched is exactly what we want.
+  (`mcp-remote`'s own README suggests an `env` block instead, which writes the
+  secret into the config JSON; this keeps the by-reference discipline.)
+- **Use an absolute path to `npx`.** Claude Desktop launches servers from the GUI
+  rather than a login shell, so your `PATH` is not its `PATH` — a bare `npx` is
+  the most common reason this config silently fails to start. Find yours with
+  `command -v npx`; `/opt/homebrew/bin/npx` above is the Homebrew location.
+- **No `--allow-http`.** `mcp-remote` already exempts `localhost` and `127.0.0.1`
+  from its HTTPS requirement, so the flag buys nothing here and would relax that
+  check for every other host.
+
+The token lands in the bridge process's *environment* rather than its arguments,
+so it does not appear in a plain `ps` listing the way the Inspector command above
+does.
+
+### Other MCP clients
+
+Cursor, VS Code, and Windsurf all speak streamable HTTP natively, so they need no
+bridge — just the tunnel, plus each one's own syntax for pulling the token in by
+reference instead of pasting it.
+
+**Cursor** — `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (per project). A
+remote server is one that has `url` instead of `command`; no `type` field is
+needed. Interpolation is `${env:VAR}`:
+
+```json
+{
+  "mcpServers": {
+    "nanokvm": {
+      "url": "http://127.0.0.1:8080/",
+      "headers": { "Authorization": "Bearer ${env:NANOKVM_MCP_TOKEN}" }
+    }
+  }
+}
+```
+
+**VS Code** — `.vscode/mcp.json` (workspace) or the user-profile `mcp.json`. The
+top-level key is `servers`, not `mcpServers`, and HTTP servers need an explicit
+`"type": "http"`. Prefer a `promptString` input over an environment variable: VS
+Code asks once, keeps the value in its secret storage, and the token never lands
+in the file at all.
+
+```json
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "nanokvm-token",
+      "description": "NanoKVM MCP bearer token",
+      "password": true
+    }
+  ],
+  "servers": {
+    "nanokvm": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/",
+      "headers": { "Authorization": "Bearer ${input:nanokvm-token}" }
+    }
+  }
+}
+```
+
+**Windsurf** — `~/.codeium/windsurf/mcp_config.json`. The URL field is
+`serverUrl`, not `url`; otherwise it matches Cursor:
+
+```json
+{
+  "mcpServers": {
+    "nanokvm": {
+      "serverUrl": "http://127.0.0.1:8080/",
+      "headers": { "Authorization": "Bearer ${env:NANOKVM_MCP_TOKEN}" }
+    }
+  }
+}
+```
+
+Windsurf also supports `${file:/absolute/path}`, which reads a file's contents
+straight into the header and is the closest any client gets to the by-reference
+pattern. If you use it, strip the trailing newline from the token file first
+(`printf %s "$(cat ~/.nanokvm-token)" > ~/.nanokvm-token.raw`) — an unstripped
+newline in the header value will fail auth in a way that reads like a bad token.
+Windsurf also needs a full quit and reopen after a config change.
+
+**One caveat for the `${env:...}` configs above.** `export NANOKVM_MCP_TOKEN` in
+your shell profile is picked up by Claude Code because it runs in your terminal.
+A GUI-launched editor may not see it: on macOS an app started from Finder or the
+Dock inherits launchd's environment, not your shell's. Either start the editor
+from a terminal that has the variable set, or use a mechanism that doesn't depend
+on it — VS Code's `${input:}` and Windsurf's `${file:}` both avoid the problem.
+Reaching for `launchctl setenv` works but exports the token to every process you
+own, which is a worse trade than either.
+
+**Anything else.** Other clients fall into one of two shapes. If the client takes
+a `url` plus a `headers` map, use the generic config at the top of this section
+with whatever interpolation syntax it documents. If it only registers stdio
+servers, wrap it in `mcp-remote` exactly as Claude Desktop does above. Either way
+the tunnel and the bearer token are unchanged — only the file location and the
+variable syntax differ.
+
 ## Tools
 
 14 tools are registered by default (7 in read-only mode):
