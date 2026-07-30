@@ -217,9 +217,9 @@ func TestToolHandlers(t *testing.T) {
 		{
 			name:     "info returns firmware payload",
 			tool:     "nanokvm_info",
-			serve:    map[string]any{"/api/vm/info": map[string]any{"ip": "10.0.1.63", "mdns": "kvm-adf2"}},
+			serve:    map[string]any{"/api/vm/info": map[string]any{"ip": "192.0.2.10", "mdns": "nanokvm-test"}},
 			wantReqs: []fakeReq{{Method: "GET", Path: "/api/vm/info"}},
-			wantJSON: []string{`"ip":"10.0.1.63"`, `"mdns":"kvm-adf2"`},
+			wantJSON: []string{`"ip":"192.0.2.10"`, `"mdns":"nanokvm-test"`},
 		},
 		{
 			name:     "hardware returns raw firmware payload",
