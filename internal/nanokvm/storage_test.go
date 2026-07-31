@@ -2,8 +2,65 @@ package nanokvm
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"testing"
 )
+
+// mountHandler mirrors upstream's /api/storage/image/mount
+// (server/service/storage/image.go), which binds proto.MountImageReq. Both
+// fields are `validate:"omitempty"`, and an empty File is not an error: it is
+// how the firmware is told to unmount.
+func mountHandler(unmounted *bool) func(*http.Request) (any, int) {
+	return func(r *http.Request) (any, int) {
+		var req struct {
+			File  string `json:"file"`
+			Cdrom bool   `json:"cdrom"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return nil, -1 // "invalid arguments"
+		}
+		if unmounted != nil {
+			*unmounted = req.File == ""
+		}
+		return nil, 0
+	}
+}
+
+func TestMountImageSendsTheFieldsUpstreamBinds(t *testing.T) {
+	f := newFakeKVM()
+	defer f.Close()
+	f.onRequest("/api/storage/image/mount", mountHandler(nil))
+	c := newTestClient(f)
+
+	if err := c.MountImage(context.Background(), "/data/ubuntu.iso", true); err != nil {
+		t.Fatalf("MountImage: %v", err)
+	}
+	body := f.body(t, "/api/storage/image/mount")
+	if body["file"] != "/data/ubuntu.iso" {
+		t.Errorf("file = %v, want /data/ubuntu.iso", body["file"])
+	}
+	if body["cdrom"] != true {
+		t.Errorf("cdrom = %v, want true", body["cdrom"])
+	}
+}
+
+// Unmount is the same route with an empty file; upstream branches on
+// `req.File == ""` rather than on a separate endpoint.
+func TestUnmountImageLeavesTheFileEmpty(t *testing.T) {
+	f := newFakeKVM()
+	defer f.Close()
+	var unmounted bool
+	f.onRequest("/api/storage/image/mount", mountHandler(&unmounted))
+	c := newTestClient(f)
+
+	if err := c.UnmountImage(context.Background()); err != nil {
+		t.Fatalf("UnmountImage: %v", err)
+	}
+	if !unmounted {
+		t.Error("the firmware read a non-empty file and would have mounted instead of unmounting")
+	}
+}
 
 func TestListImagesReadsTheFilesEnvelope(t *testing.T) {
 	// Upstream answers with proto.GetImagesRsp, so data is {"files": [...]},

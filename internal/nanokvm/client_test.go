@@ -17,6 +17,28 @@ func newTestClient(f *fakeKVM) *Client {
 	})
 }
 
+// Upstream's proto.LoginReq has no json tags; gin binds it with encoding/json,
+// which matches "username"/"password" against Username/Password
+// case-insensitively. The password travels as the CryptoJS container the
+// firmware expects, never as plaintext.
+func TestLoginSendsTheFieldsUpstreamBinds(t *testing.T) {
+	f := newFakeKVM()
+	defer f.Close()
+	c := newTestClient(f)
+
+	if _, err := c.Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	body := f.body(t, "/api/auth/login")
+	if body["username"] != "admin" {
+		t.Errorf("username = %v, want admin", body["username"])
+	}
+	pw, _ := body["password"].(string)
+	if pw == "" || pw == "admin" {
+		t.Errorf("password = %q, want the encrypted container rather than the plaintext", pw)
+	}
+}
+
 func TestDoAuthenticatesOnce(t *testing.T) {
 	f := newFakeKVM()
 	defer f.Close()

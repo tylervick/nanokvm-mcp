@@ -7,20 +7,31 @@ import (
 	"net/http"
 )
 
+// imagesRsp is the `data` of GET /api/storage/image (upstream
+// proto.GetImagesRsp). The payload is {"files": [...]}, not a bare array.
+type imagesRsp struct {
+	Files []string `json:"files"`
+}
+
+// mountImageReq is the body of POST /api/storage/image/mount (upstream
+// proto.MountImageReq). An empty File is not an omission: it is how the
+// firmware is told to unmount.
+type mountImageReq struct {
+	File  string `json:"file"`
+	Cdrom bool   `json:"cdrom"`
+}
+
 // ListImages returns the disk image paths the firmware offers for mounting.
 //
-// Upstream answers with proto.GetImagesRsp, so the payload is {"files": [...]}
-// rather than a bare array. A payload we cannot read is an error here, not an
-// empty list: "this device has no images" is itself a valid answer, and the
-// caller has no way to tell the two apart otherwise.
+// A payload we cannot read is an error here, not an empty list: "this device
+// has no images" is itself a valid answer, and the caller has no way to tell
+// the two apart otherwise.
 func (c *Client) ListImages(ctx context.Context) ([]string, error) {
 	raw, err := c.Do(ctx, http.MethodGet, "/api/storage/image", nil)
 	if err != nil {
 		return nil, err
 	}
-	var rsp struct {
-		Files []string `json:"files"`
-	}
+	var rsp imagesRsp
 	if err := json.Unmarshal(raw, &rsp); err != nil {
 		return nil, fmt.Errorf("nanokvm: /api/storage/image: unexpected data shape: %w", err)
 	}
@@ -29,12 +40,12 @@ func (c *Client) ListImages(ctx context.Context) ([]string, error) {
 
 func (c *Client) MountImage(ctx context.Context, file string, cdrom bool) error {
 	_, err := c.Do(ctx, http.MethodPost, "/api/storage/image/mount",
-		map[string]any{"file": file, "cdrom": cdrom})
+		mountImageReq{File: file, Cdrom: cdrom})
 	return err
 }
 
 func (c *Client) UnmountImage(ctx context.Context) error {
-	_, err := c.Do(ctx, http.MethodPost, "/api/storage/image/mount", map[string]any{})
+	_, err := c.Do(ctx, http.MethodPost, "/api/storage/image/mount", mountImageReq{})
 	return err
 }
 

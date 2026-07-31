@@ -18,10 +18,36 @@ func logUnmarshal(path string, err error) {
 	}
 }
 
+// LED is what we report to callers. HDDAvailable has no counterpart on the
+// wire: upstream's GetGpioRsp carries pwr and hdd only, and hdd is hardcoded
+// false off alpha hardware, so availability is derived here from the hardware
+// version. Keeping it out of gpioRsp is what keeps the two apart.
 type LED struct {
 	PWR          bool `json:"pwr"`
 	HDD          bool `json:"hdd"`
 	HDDAvailable bool `json:"hdd_available"`
+}
+
+// gpioRsp is the `data` of GET /api/vm/gpio (upstream proto.GetGpioRsp).
+type gpioRsp struct {
+	PWR bool `json:"pwr"`
+	HDD bool `json:"hdd"`
+}
+
+// setGpioReq is the body of POST /api/vm/gpio.
+//
+// Upstream binds proto.SetGpioReq, which carries no json tags: these names
+// reach Type and Duration through encoding/json's case-insensitive fallback.
+// Type is `validate:"required"` upstream, so it is never omitempty here.
+type setGpioReq struct {
+	Type     string `json:"type"`
+	Duration int    `json:"duration"`
+}
+
+// hardwareRsp is the `data` of GET /api/vm/hardware (upstream
+// proto.GetHardwareRsp).
+type hardwareRsp struct {
+	Version string `json:"version"`
 }
 
 type Hardware struct {
@@ -31,7 +57,7 @@ type Hardware struct {
 
 func (c *Client) Power(ctx context.Context, action string, durationMs int) error {
 	_, err := c.Do(ctx, http.MethodPost, "/api/vm/gpio",
-		map[string]any{"type": action, "duration": durationMs})
+		setGpioReq{Type: action, Duration: durationMs})
 	return err
 }
 
@@ -51,10 +77,14 @@ func (c *Client) Hardware(ctx context.Context) (Hardware, error) {
 	if err != nil {
 		return Hardware{}, err
 	}
+	// Decoded twice on purpose: Raw is handed to the MCP client whole, while
+	// Version is a field we act on, so it goes through a declared shape that
+	// apicheck can hold against upstream's GetHardwareRsp.
 	var m map[string]any
 	logUnmarshal("/api/vm/hardware", json.Unmarshal(raw, &m))
-	v, _ := m["version"].(string)
-	v = strings.ToLower(v)
+	var rsp hardwareRsp
+	logUnmarshal("/api/vm/hardware version", json.Unmarshal(raw, &rsp))
+	v := strings.ToLower(rsp.Version)
 	c.mu.Lock()
 	c.hwVersion = v
 	c.mu.Unlock()
@@ -66,8 +96,9 @@ func (c *Client) LEDStatus(ctx context.Context) (LED, error) {
 	if err != nil {
 		return LED{}, err
 	}
-	var led LED
-	logUnmarshal("/api/vm/gpio", json.Unmarshal(raw, &led))
+	var rsp gpioRsp
+	logUnmarshal("/api/vm/gpio", json.Unmarshal(raw, &rsp))
+	led := LED{PWR: rsp.PWR, HDD: rsp.HDD}
 	// HDD LED exists only on alpha hardware (upstream gpio.go hardcodes hdd=false
 	// otherwise). Report availability so the tool does not present a fake reading.
 	c.mu.Lock()

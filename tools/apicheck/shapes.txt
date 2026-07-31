@@ -1,0 +1,59 @@
+# The shapes we put on each route, held against the firmware's own declarations.
+#
+# routes.txt proves the routes still exist. This file is the other half: what
+# travels over them. Every route in routes.txt needs at least one row here, and
+# a route with nothing to diff needs a row saying so and why -- so an omission
+# reads as a decision rather than as something nobody got to.
+#
+# Writing the row is half the value. Naming the upstream type forces whoever
+# adds a client method to open that struct, which is the step #31 skipped.
+#
+# Columns (whitespace-separated; the last one runs to end of line):
+#
+#   <route>  <METHOD>  <dir>  <upstream>  <ours>
+#
+#   dir        req -- the body we send, which upstream binds and validates
+#              rsp -- the envelope's `data`, which upstream encodes and we decode
+#   upstream   <path in sipeed/NanoKVM>#<TypeName>, or `-` when upstream declares
+#              no type for this direction
+#   ours       <path in this repo>#<TypeName> to diff the two, or a marker:
+#                passthrough: <why>  upstream has a type; we hand the decoded map
+#                                    to the MCP client without reading fields
+#                untyped:     <why>  no struct on either side (streams, binary,
+#                                    query strings)
+#                none:        <why>  the direction carries no payload
+#
+# A route may have several rows. Nested types get their own row rather than
+# being walked implicitly, so a failure names the struct it is talking about.
+#
+# What this cannot see: framing and transport semantics. The /api/ws HID byte
+# protocol and the fact that /api/stream/mjpeg never ends are not declared as
+# types anywhere upstream, so no row here covers them. Those are guarded only by
+# fakes that behave the way the firmware behaves.
+
+/api/auth/login             POST  req  server/proto/auth.go#LoginReq                internal/nanokvm/client.go#loginReq
+/api/auth/login             POST  rsp  server/proto/auth.go#LoginRsp                internal/nanokvm/client.go#loginRsp
+
+/api/vm/gpio                POST  req  server/proto/vm.go#SetGpioReq                internal/nanokvm/vm.go#setGpioReq
+/api/vm/gpio                GET   rsp  server/proto/vm.go#GetGpioRsp                internal/nanokvm/vm.go#gpioRsp
+/api/vm/hardware            GET   rsp  server/proto/vm.go#GetHardwareRsp            internal/nanokvm/vm.go#hardwareRsp
+/api/vm/hdmi                GET   rsp  server/proto/vm.go#GetGetHdmiStateRsp        passthrough: HDMIStatus returns the decoded map to the MCP client unread
+/api/vm/hdmi/reset          POST  req  -                                            none: upstream's ResetHdmi binds nothing; we post no body
+/api/vm/info                GET   rsp  server/proto/vm.go#GetInfoRsp                passthrough: Info returns the decoded map to the MCP client unread
+
+/api/storage/image          GET   rsp  server/proto/storage.go#GetImagesRsp         internal/nanokvm/storage.go#imagesRsp
+/api/storage/image/mount    POST  req  server/proto/storage.go#MountImageReq        internal/nanokvm/storage.go#mountImageReq
+/api/storage/image/mounted  GET   rsp  server/proto/storage.go#GetMountedImageRsp   passthrough: MountedImage returns the decoded map to the MCP client unread
+
+/api/hid/paste              POST  req  server/service/hid/paste.go#PasteReq         internal/nanokvm/hid.go#pasteReq
+/api/hid/reset              POST  req  -                                            none: upstream's ResetHid binds nothing; we post no body
+
+/api/stream/mjpeg           GET   rsp  -                                            untyped: multipart/x-mixed-replace of JPEG parts, no envelope and no EOF; guarded by internal/backend/public_test.go
+
+# INTERNAL, unstable: picoclaw is a loopback API with no proto package. Its
+# request types still live in Go source, so the action batch is diffable; the
+# screenshot is not.
+/api/picoclaw/actions       POST  req  server/service/picoclaw/types.go#ActionBatch  internal/backend/picoclaw.go#actionBatch
+/api/picoclaw/actions       POST  req  server/service/picoclaw/types.go#Action       internal/backend/backend.go#Action
+/api/picoclaw/actions       POST  req  server/service/picoclaw/types.go#Point        internal/backend/backend.go#Point
+/api/picoclaw/screenshot    GET   rsp  -                                            untyped: raw image/jpeg bytes, no envelope; the request is a query string bound by `form` tags, not a JSON body, and its names are pinned by internal/backend/picoclaw_test.go
