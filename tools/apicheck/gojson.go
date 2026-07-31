@@ -151,6 +151,13 @@ func (p *gopkg) structOf(typeName string) ([]jsonField, string, error) {
 	if !ok {
 		return nil, "", fmt.Errorf("type %s is not declared in the parsed sources", typeName)
 	}
+	// kindOf already treats a *field* of such a type as opaque. The same rule
+	// has to hold for the type a shape row names, or the diff would compare
+	// fields that never reach the wire and call that agreement.
+	if p.hasJSONMethods(typeName) {
+		return nil, file, fmt.Errorf("type %s declares its own MarshalJSON/UnmarshalJSON, so its fields do not "+
+			"describe the payload; the shape row needs an untyped: marker instead", typeName)
+	}
 	st, ok := ts.Type.(*ast.StructType)
 	if !ok {
 		k, err := p.kindOf(ts.Type, 0)

@@ -28,8 +28,10 @@
 #
 # What this cannot see: framing and transport semantics. The /api/ws HID byte
 # protocol and the fact that /api/stream/mjpeg never ends are not declared as
-# types anywhere upstream, so no row here covers them. Those are guarded only by
-# fakes that behave the way the firmware behaves.
+# types anywhere upstream. Both still get a row -- an `untyped:` one -- because
+# a route we depend on has to appear here either way; the row records that the
+# check does not reach it, and names what does. Both are guarded only by fakes
+# that behave the way the firmware behaves.
 
 /api/auth/login             POST  req  server/proto/auth.go#LoginReq                internal/nanokvm/client.go#loginReq
 /api/auth/login             POST  rsp  server/proto/auth.go#LoginRsp                internal/nanokvm/client.go#loginRsp
@@ -49,6 +51,13 @@
 /api/hid/reset              POST  req  -                                            none: upstream's ResetHid binds nothing; we post no body
 
 /api/stream/mjpeg           GET   rsp  -                                            untyped: multipart/x-mixed-replace of JPEG parts, no envelope and no EOF; guarded by internal/backend/public_test.go
+
+# The HID websocket, and the reason this table cannot close the class on its
+# own. Upstream switches on the first byte of a BINARY frame and expects a raw
+# HID report after it (server/service/ws/client.go, web/src/lib/*.ts); none of
+# that is a declared type, so there is nothing here to diff. #29 was exactly
+# this route, sent as JSON text frames and discarded silently.
+/api/ws                     GET   req  -                                            untyped: binary frames of one event byte plus a raw HID report, not JSON; guarded by internal/backend/public_input_test.go and internal/hid
 
 # INTERNAL, unstable: picoclaw is a loopback API with no proto package. Its
 # request types still live in Go source, so the action batch is diffable; the

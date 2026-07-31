@@ -183,7 +183,11 @@ func TestUpstreamShapesMatchOurs(t *testing.T) {
 	}
 
 	for _, r := range rows {
-		if !r.diffable() {
+		// Resolved for every row that names an upstream type, including the
+		// passthrough ones. A marker row records what upstream sends even
+		// though we read none of it, and that record is only worth having if
+		// something checks the type still exists under that name.
+		if r.upstream.empty() {
 			continue
 		}
 		dir, file := path.Split(r.upstream.path)
@@ -195,6 +199,9 @@ func TestUpstreamShapesMatchOurs(t *testing.T) {
 		}
 		if declaredIn != file {
 			t.Errorf("%s: upstream %s moved to %s/%s; update the table", r, r.upstream, dir, declaredIn)
+		}
+		if !r.diffable() {
+			continue // marker row: the type exists; we deliberately read none of it
 		}
 		ours, err := ourFields(r.ours)
 		if err != nil {
@@ -214,17 +221,17 @@ func TestShapeTableActuallyDiffsSomething(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var diffable, markers []string
+	var diffable, exempt []string
 	for _, r := range rows {
 		if r.diffable() {
 			diffable = append(diffable, r.route)
 		} else {
-			markers = append(markers, r.route+" ("+r.marker+")")
+			exempt = append(exempt, r.route+" ("+r.marker+")")
 		}
 	}
 	if len(diffable) == 0 {
 		t.Fatal("no row in shapes.txt names a type pair, so nothing is compared")
 	}
-	sort.Strings(markers)
-	t.Logf("%d rows diffed, %d exempt: %s", len(diffable), len(markers), strings.Join(markers, ", "))
+	sort.Strings(exempt)
+	t.Logf("%d rows diffed, %d exempt: %s", len(diffable), len(exempt), strings.Join(exempt, ", "))
 }

@@ -254,6 +254,25 @@ func TestStructOfErrorsWhenTypeIsNotAStruct(t *testing.T) {
 	}
 }
 
+// A type that encodes itself does not describe its payload through its fields,
+// so diffing those fields would compare things that never reach the wire. That
+// is the silent pass this package exists to refuse: naming such a type in the
+// shape table has to fail, and the row has to use a marker instead.
+func TestStructOfRejectsATypeThatEncodesItself(t *testing.T) {
+	p, err := parseGoFiles(src(`
+type T struct {
+	A string ~json:"a"~
+}
+
+func (t T) MarshalJSON() ([]byte, error) { return nil, nil }`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if _, _, err := p.structOf("T"); err == nil {
+		t.Fatal("want an error: T's own MarshalJSON decides the payload, not its fields")
+	}
+}
+
 func TestStructOfReportsTheDeclaringFile(t *testing.T) {
 	p, err := parseGoFiles(files(map[string]string{
 		"a.go": "type A struct{}",
