@@ -94,11 +94,18 @@ func (p *Picoclaw) Screenshot(ctx context.Context, opts ScreenshotOpts) (Shot, e
 	return Shot{JPEG: jpeg}, nil
 }
 
+// actionBatch is the body of POST /api/picoclaw/actions, matching picoclaw's
+// own ActionBatch. Its Actions decode into picoclaw.Action, which is why
+// backend.Action's json tags are part of this route's contract too.
+type actionBatch struct {
+	Actions []Action `json:"actions"`
+}
+
 func (p *Picoclaw) Input(ctx context.Context, actions []Action) error {
 	if err := ValidateActions(actions); err != nil {
 		return err
 	}
-	body, err := json.Marshal(map[string]any{"actions": actions})
+	body, err := json.Marshal(actionBatch{Actions: actions})
 	if err != nil {
 		return err
 	}

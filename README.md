@@ -49,7 +49,7 @@ is a static `CGO_ENABLED=0` build for `linux/riscv64`.
 mise run build        # dist/nanokvm-mcp, for the device (linux/riscv64)
 mise run build-host   # dist/nanokvm-mcp-host, for your own machine (e.g. to run tests locally)
 mise run test         # go test ./...
-mise run apicheck     # checks that our route assumptions still match live upstream
+mise run apicheck     # checks our routes AND payload shapes against live upstream
 mise run sizecheck    # builds, fails if the binary exceeds 15 MB
 ```
 
@@ -665,7 +665,7 @@ or take a second screenshot and use that one.
 
 ```sh
 mise run test      # unit tests, no mocked HTTP/WS transport (httptest fakes only)
-mise run apicheck  # fails if our assumed upstream routes have drifted
+mise run apicheck  # fails if upstream's routes or payload shapes have drifted
 mise run sizecheck # fails if the binary exceeds 15 MB
 ```
 

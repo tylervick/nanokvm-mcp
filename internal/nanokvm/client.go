@@ -46,6 +46,22 @@ type envelope struct {
 	Data json.RawMessage `json:"data"`
 }
 
+// loginReq is the body of POST /api/auth/login.
+//
+// Upstream binds proto.LoginReq, which carries no json tags: these names reach
+// Username and Password through encoding/json's case-insensitive fallback. Both
+// are `validate:"required"` upstream, so neither is omitempty here.
+type loginReq struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// loginRsp is the `data` of POST /api/auth/login (upstream proto.LoginRsp). The
+// token normally arrives as a cookie; this is the fallback.
+type loginRsp struct {
+	Token string `json:"token"`
+}
+
 // WSURL returns the configured websocket URL (used by backends).
 func (c *Client) WSURL() string { return c.cfg.WSURL }
 
@@ -89,7 +105,8 @@ func (c *Client) login(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	body, _ := json.Marshal(map[string]string{"username": c.cfg.Username, "password": enc})
+	//nolint:gosec // G117: the login endpoint takes the password as a field; enc is the encrypted container, not the plaintext.
+	body, _ := json.Marshal(loginReq{Username: c.cfg.Username, Password: enc})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.BaseURL+"/api/auth/login", bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -115,9 +132,7 @@ func (c *Client) login(ctx context.Context) error {
 		}
 	}
 	if token == "" {
-		var d struct {
-			Token string `json:"token"`
-		}
+		var d loginRsp
 		_ = json.Unmarshal(env.Data, &d)
 		token = d.Token
 	}

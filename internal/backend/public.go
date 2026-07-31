@@ -205,8 +205,7 @@ func (p *Public) Input(ctx context.Context, actions []Action) error {
 				}
 				continue
 			}
-			if _, err := p.kvm.Do(ctx, http.MethodPost, "/api/hid/paste",
-				map[string]any{"content": a.Text, "langue": ""}); err != nil {
+			if err := p.kvm.Paste(ctx, a.Text, ""); err != nil {
 				return err
 			}
 		}

@@ -10,5 +10,6 @@
 /api/hid/paste
 /api/hid/reset
 /api/stream/mjpeg
+/api/ws
 /api/picoclaw/screenshot
 /api/picoclaw/actions

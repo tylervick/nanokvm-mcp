@@ -16,6 +16,7 @@ const ref = "main"
 var routerFiles = []string{
 	"server/router/auth.go", "server/router/vm.go", "server/router/hid.go",
 	"server/router/storage.go", "server/router/stream.go", "server/router/picoclaw.go",
+	"server/router/ws.go",
 }
 
 func fetch(t *testing.T, path string) string {
