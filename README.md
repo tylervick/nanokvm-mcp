@@ -669,5 +669,48 @@ mise run apicheck  # fails if upstream's routes or payload shapes have drifted
 mise run sizecheck # fails if the binary exceeds 15 MB
 ```
 
+### Device smoke test (opt-in)
+
+One test runs against real hardware, behind a `//go:build device` tag so it never
+runs in CI or in a plain `go test ./...`. It checks the things a fake cannot: that the
+**deployed** daemon still answers over MCP, still returns a decodable frame, and is
+still inside its resident-memory budget on a device with ~43 MB free.
+
+It is read-only — every tool it calls is annotated `readOnlyHint`, and it never touches
+the target machine's keyboard, power, or mounts.
+
+**Prerequisites:** the daemon deployed and running (`HOST=root@<nanokvm> ./deploy/install.sh`),
+and the SSH master connection plus port-forward from
+[Claude Code over an SSH tunnel](#claude-code-over-an-ssh-tunnel-tested-end-to-end).
+
+| Variable | Example | Purpose |
+|---|---|---|
+| `NANOKVM_MCP_ENDPOINT` | `http://127.0.0.1:8080/` | The daemon's MCP endpoint, through the `-L` tunnel. |
+| `NANOKVM_MCP_TOKEN` | *(the device's token)* | Bearer token, same value as in `nanokvm-mcp.env`. |
+| `NANOKVM_DEVICE_SSH` | `ssh -S /tmp/nkvm.sock root@<device>` | How to run a command on the device, to read the daemon's RSS from `/proc`. Reuses the master socket, so no extra password prompt. Split on whitespace — keep the socket path space-free. |
+
+```sh
+NANOKVM_MCP_ENDPOINT=http://127.0.0.1:8080/ \
+NANOKVM_MCP_TOKEN=$(cat ~/.nanokvm-token) \
+NANOKVM_DEVICE_SSH="ssh -S /tmp/nkvm.sock root@<device>" \
+  mise run test-device
+```
+
+It asserts, in order:
+
+1. `tools/list` returns the 7 read-only tools, each annotated `readOnlyHint`.
+2. `nanokvm_hardware` round-trips to the firmware and reports a hardware version.
+3. `nanokvm_screenshot` returns bytes that decode as a complete JPEG with non-zero
+   extent — a truncated frame has a valid header, so the test decodes in full.
+4. The daemon's `VmRSS`, read from `/proc/<pid>/status` on the device, is under 25 MB.
+   This runs last on purpose: it has to observe a daemon that has already served a
+   screenshot, since JPEG handling is the allocation-heavy path.
+
+Missing environment variables fail the run rather than skipping it — `-tags device` is
+already the opt-in, and a suite that quietly skips itself is how you get a green run
+against no hardware at all. `mise run lint` type-checks the tagged file (via
+`run.build-tags` in `.golangci.yml`) so it cannot rot between hardware sessions,
+but it never executes it.
+
 See [`docs/superpowers/specs/2026-07-22-nanokvm-mcp-sidecar-design.md`](docs/superpowers/specs/2026-07-22-nanokvm-mcp-sidecar-design.md)
 for the design background, threat model, and memory strategy in full.

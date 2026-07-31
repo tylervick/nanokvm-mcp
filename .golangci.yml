@@ -1,5 +1,13 @@
 version: "2"
 
+run:
+  # Lint the `device` build tag too. The opt-in hardware smoke test in
+  # internal/devicetest never runs in CI, so linting is the only thing that
+  # type-checks it — without this it would rot silently until someone next
+  # reached for real hardware.
+  build-tags:
+    - device
+
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
   enable:
