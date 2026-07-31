@@ -212,7 +212,3 @@ func ourFields(ref typeRef) ([]jsonField, error) {
 	}
 	return fields, nil
 }
-
-func upstreamURL(p string) string {
-	return "https://github.com/sipeed/NanoKVM/blob/" + ref + "/" + p
-}

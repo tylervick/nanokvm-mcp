@@ -8,6 +8,13 @@ import (
 	"testing"
 )
 
+// upstreamURL points at the source a failure is about. It lives here, beside
+// the pinned `ref` and the fetch that uses it, so shapes.go stays free of
+// anything declared in a test file.
+func upstreamURL(p string) string {
+	return "https://github.com/sipeed/NanoKVM/blob/" + ref + "/" + p
+}
+
 func mustRow(t *testing.T, line string) shapeRow {
 	t.Helper()
 	r, err := parseShapeRow(line, 1)
