@@ -2,9 +2,9 @@ name: ci
 on:
   push:
   pull_request:
-  schedule:
+  # schedule:
     # Weekly vulnerability sweep: new CVEs land against unchanged code.
-    - cron: "17 6 * * 1"
+    # - cron: "17 6 * * 1"
 permissions:
   contents: read
 jobs:
