@@ -1,8 +1,8 @@
 [tools]
-go = "1.26.5"
-golangci-lint = "2.12.2"
-goreleaser = "2.17.1"
-"go:golang.org/x/vuln/cmd/govulncheck" = "1.6.0"
+go = "1.27.1"
+golangci-lint = "2.13.2"
+goreleaser = "2.18.1"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.8.0"
 
 [settings]
 # Prepend mise-managed tool dirs ahead of everything else on PATH. Without
