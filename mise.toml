@@ -25,6 +25,13 @@ run = "go test -race -shuffle=on ./..."
 # Only the test task gets cgo; device builds stay CGO_ENABLED=0 static.
 env = { CGO_ENABLED = "1" }
 
+# Opt-in smoke test against real hardware. Excluded from `test` (and so from
+# CI) by the `device` build tag; needs a deployed daemon, an SSH tunnel, and
+# the NANOKVM_* variables documented in README.md. -count=1 because a cached
+# pass tells you nothing about the device's state right now.
+[tasks.test-device]
+run = "go test -tags device -count=1 -v ./internal/devicetest/"
+
 [tasks.lint]
 run = "golangci-lint run ./..."
 
