@@ -4,7 +4,7 @@ go 1.25.4
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	golang.org/x/image v0.44.0
 )
 
